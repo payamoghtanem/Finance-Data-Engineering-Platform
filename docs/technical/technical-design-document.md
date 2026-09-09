@@ -1,0 +1,137 @@
+# Technical Design Document (TDD)
+
+**What this document answers:** at implementation-detail level, how are modules organized, what is the exact retry/backoff and DLQ algorithm, what does the repo layout and local `docker-compose` look like, and what does the CI/CD pipeline do?
+**How it differs from its neighbors:** `data-model.md` says what a table looks like; `api-design.md` says what an endpoint looks like; this document is where those become buildable — module boundaries, algorithms, repo structure, and deployment mechanics.
+
+## 1. Repository layout (target, once implementation begins)
+
+```
+.
+├── docs/                       # This documentation set (already present)
+├── src/
+│   ├── connectors/             # One package per data source
+│   │   ├── fred/
+│   │   ├── worldbank/
+│   │   ├── eurostat/
+│   │   ├── sec_edgar/
+│   │   └── coingecko/
+│   ├── validation/             # Schema + data-quality rule engine (FR-QUAL-xxx)
+│   ├── transform/               # dbt project (Bronze→Silver→Gold models)
+│   │   └── dbt_project/
+│   ├── serving/
+│   │   ├── api/                # FastAPI app implementing api-design.md
+│   │   └── agent/               # Scoped AI agent implementing ai-agent/agentic-ai-design.md
+│   ├── events/                  # Event envelope + emit/consume helpers (event-schema.md)
+│   └── common/                  # Shared types, config loading, logging
+├── pipelines/
+│   └── dagster_project/         # Orchestration: schedules, sensors, asset definitions
+├── infra/
+│   ├── docker-compose.yml       # Phase 1 local stack
+│   ├── k8s/                     # Phase 3 manifests/Helm charts
+│   └── terraform/               # Phase 3 IaC (OpenTofu/Terraform, per ARD tool table)
+├── tests/
+│   ├── unit/
+│   ├── integration/
+│   └── data_quality/            # Great Expectations / Soda Core suites
+└── .github/workflows/           # CI/CD (see §5)
+```
+
+Each `src/connectors/<name>/` package must contain, per NFR-MAINT-001: `README.md` (owner, purpose), `contract.yaml` (data contract per `../architecture/solution-design-document.md` §4), `connector.py`, and `tests/`.
+
+## 2. Module boundaries (enforcing `../architecture/ARD.md` §2.3)
+
+| Module | Responsibility | Must NOT do |
+|---|---|---|
+| `connectors/*` | Fetch from one external source, write raw response to Raw Storage, emit `raw_data.received` | Parse business meaning, write to Silver/Gold, know about other connectors |
+| `validation/` | Check schema + data contract + quality rules, emit `raw_data.validated` or `raw_data.quarantined` | Fetch data itself, transform/rename fields for business meaning |
+| `transform/` (dbt) | Bronze→Silver→Gold SQL transforms, canonical conformance | Perform network I/O, manage scheduling |
+| `serving/api` | Expose Gold data per `api-design.md`, enforce auth/rate limits | Perform transformation logic, write to any table |
+| `serving/agent` | Read-only retrieval + natural-language response per `ai-agent/agentic-ai-design.md` | Any write, delete, schema, or backfill action |
+| `pipelines/dagster_project` | Scheduling, dependency graph, retries, backfills, run visibility | Contain business/transform logic itself — it orchestrates other modules, it doesn't replace them |
+
+## 3. Retry / backoff algorithm (implements FR-ING-001 etc.)
+
+```python
+# Pseudocode — the authoritative behavioral spec is FR-ING-001 in ../requirements/FRD.md
+MAX_RETRIES = 3
+BASE_DELAY_SECONDS = 2
+
+def fetch_with_retry(request_fn):
+    for attempt in range(MAX_RETRIES + 1):
+        try:
+            response = request_fn()
+            return response
+        except TransientError as e:
+            if attempt == MAX_RETRIES:
+                raise IngestionFailed(cause=e, retries=attempt)
+            delay = BASE_DELAY_SECONDS * (2 ** attempt)  # exponential backoff: 2s, 4s, 8s
+            sleep(delay)
+        except PermanentError as e:
+            # Do not retry on 4xx (except 429) — these will not succeed on retry
+            raise IngestionFailed(cause=e, retries=attempt)
+```
+
+- `TransientError`: network timeout, connection reset, 5xx, or 429 (rate limited — respects `Retry-After` if present, overriding the exponential schedule).
+- `PermanentError`: 4xx other than 429 (e.g., malformed request, auth failure) — retrying would not help and wastes rate-limit budget.
+- Every attempt (success or failure) is recorded on the `ingestion_run` row (`data-model.md`), satisfying NFR-AUDIT-001.
+
+## 4. Idempotent write pattern (implements ARD §2.5)
+
+Silver/Gold writes use `MERGE`/upsert semantics keyed on each table's documented primary key (`data-model.md`), never blind `INSERT`. Example (Iceberg SQL via Trino/DuckDB):
+
+```sql
+MERGE INTO silver.fact_market_ohlcv AS target
+USING staging.fact_market_ohlcv_batch AS source
+ON  target.source_id = source.source_id
+AND target.instrument_id = source.instrument_id
+AND target.interval = source.interval
+AND target.observed_at = source.observed_at
+WHEN MATCHED THEN UPDATE SET
+    open = source.open, high = source.high, low = source.low,
+    close = source.close, volume = source.volume,
+    data_quality_status = source.data_quality_status
+WHEN NOT MATCHED THEN INSERT (*)
+```
+
+Re-running the same ingestion run produces the same final state — no duplicates, satisfying FR-QUAL-003.
+
+## 5. CI/CD pipeline design (GitHub Actions, Phase 1–2; add Argo CD in Phase 3 per ARD tool table)
+
+1. **Lint & static checks**: Python (ruff/mypy-equivalent), SQL (dbt's own linting), YAML schema checks on data contracts.
+2. **Secret scanning**: block any commit introducing a credential pattern (enforces NFR-SEC-003).
+3. **Unit tests**: `tests/unit/` — connectors' parsing logic, validation rule logic, API request/response shape.
+4. **Data contract validation**: every `contract.yaml` under `src/connectors/*` is schema-validated against the contract template in `../architecture/solution-design-document.md` §4.
+5. **Integration tests**: `tests/integration/` — spin up the Phase 1 `docker-compose` stack, run a connector against a recorded/mocked response, assert Bronze/Silver/Gold rows land correctly and idempotently.
+6. **Data quality suite**: `tests/data_quality/` — Great Expectations/Soda Core suites implementing FR-QUAL-001..009 against sample data.
+7. **Build & (Phase 2+) publish** container images.
+8. **Deploy** (Phase 2+): GitOps trigger via Argo CD watching the `infra/k8s` manifests.
+
+A pull request cannot merge unless steps 1–6 pass — this is the mechanical enforcement of `../architecture/ARD.md` §2.6 (Data Quality as Code) and the TDD leg of `../methodology/edd-sdd-tdd.md`.
+
+## 6. Phase 1 local stack (`infra/docker-compose.yml`, conceptual)
+
+```yaml
+services:
+  postgres:        # metadata, job state, API cache — see data-model.md
+  minio:            # raw object storage + Bronze/Silver/Gold Iceberg data
+  dagster:          # orchestration — schedules, sensors, run visibility
+  dbt:              # Bronze→Silver→Gold transforms (invoked by dagster, not standalone long-running)
+  duckdb:           # embedded, invoked by API/dashboard processes — no separate service typically needed
+  metabase:         # dashboards over Gold models
+  api:              # FastAPI serving service (api-design.md)
+  prometheus:       # metrics scraping
+  grafana:          # dashboards over Prometheus (operational, distinct from Metabase's business dashboards)
+```
+
+No Kafka, no Kubernetes, no Keycloak, no Vault in this file for Phase 1 — see ADR-0002 and ADR-0004 for why, and `../roadmap/mvp-plan.md` for when each is added.
+
+## 7. Error handling and DLQ implementation
+
+A quarantined record (from `validation/`) is written to a `dlq` Iceberg table with columns: `event_id`, `original_payload_reference`, `failure_reason`, `quarantined_at`, `dataset_id`. A replay tool (invoked manually by the operator, or later by the agent's human-approved workflow) re-emits `raw_data.received` for a DLQ entry after the underlying issue is fixed — reprocessing is idempotent per §4 above, satisfying FR-OPS-003.
+
+## 8. Relationship to other documents
+
+- Module boundaries here enforce the separation-of-concerns principle in `../architecture/ARD.md` §2.3.
+- The retry/backoff and idempotency algorithms here are the concrete implementation of FR-ING-001 and NFR-RTO-002 in `../requirements/`.
+- The CI/CD steps here are how `../methodology/edd-sdd-tdd.md`'s TDD leg is mechanically enforced, not just followed by convention.
+- The Phase 1 stack here must match `../roadmap/mvp-plan.md`'s Phase 1 tool list exactly — if they disagree, that's a defect (see `../roadmap/CLAUDE.md`).
