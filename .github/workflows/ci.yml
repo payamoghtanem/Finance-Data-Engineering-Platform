@@ -43,7 +43,7 @@ jobs:
           else echo "has_src=false" >> "$GITHUB_OUTPUT"; echo "No src/ yet (Phase 0) - skipping."; fi
 
       - if: steps.guard.outputs.has_src == 'true'
-        run: pip install ruff mypy
+        run: pip install -e ".[dev]"
 
       - if: steps.guard.outputs.has_src == 'true'
         run: ruff check src tests
