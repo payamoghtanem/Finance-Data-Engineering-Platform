@@ -1,6 +1,7 @@
 """Common utilities shared across the finance data platform."""
 
 from src.common.config import DatabaseConfig, MinIOConfig, PlatformConfig
+from src.common.dlq import DLQEntry, DLQRecorder, DLQStatus
 from src.common.ingestion_run import IngestionRun, IngestionRunRecorder, RunStatus
 from src.common.logging_config import setup_logging
 from src.common.raw_storage import (
@@ -14,6 +15,9 @@ from src.common.raw_storage import (
 from src.common.version import get_code_version
 
 __all__ = [
+    "DLQEntry",
+    "DLQRecorder",
+    "DLQStatus",
     "DatabaseConfig",
     "IngestionRun",
     "IngestionRunRecorder",
