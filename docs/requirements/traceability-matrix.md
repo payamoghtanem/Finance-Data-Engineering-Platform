@@ -11,7 +11,7 @@
 
 | Requirement | BRD goal (`../business/BRD.md`) | PRD capability (`../business/PRD.md`) | Implementation | Test |
 |---|---|---|---|---|
-| FR-ING-001 (FRED CPI ingestion) | §4 Eliminates manual data collection; §4 Provenance provable | §3 Must-have: Canonical query API; §2.1 Ana's journey | `src/connectors/fred/connector.py` (fetch, raw store via `S3RawStorage`, retry) + `src/bronze/writer.py` (Bronze lineage) — **partial**: `ingestion_run` recording pending (EPIC-02 remainder) | `tests/unit/test_fred_connector.py::TestRetryBehaviour`, `::TestRawStorage`; `tests/unit/test_s3_raw_storage.py`; `tests/unit/test_bronze_writer.py` |
+| FR-ING-001 (FRED CPI ingestion) | §4 Eliminates manual data collection; §4 Provenance provable | §3 Must-have: Canonical query API; §2.1 Ana's journey | `src/connectors/fred/connector.py` (fetch, raw store via `S3RawStorage`, retry, `ingestion_run` recording) + `src/bronze/writer.py` (Bronze lineage) — **partial**: fact-table idempotency (`fact_economic_observation` deduplication) needs the Silver layer, EPIC-05, not built yet | `tests/unit/test_fred_connector.py::TestRetryBehaviour`, `::TestRawStorage`, `::TestIngestionRunRecording`; `tests/unit/test_s3_raw_storage.py`; `tests/unit/test_bronze_writer.py`; `tests/unit/test_ingestion_run.py` |
 | FR-ING-002 (World Bank ingestion) | §4 Eliminates manual data collection | §3 Must-have: Dataset catalog & search | — | — |
 | FR-ING-003 (Eurostat SDMX ingestion) | §4 Reproducible analysis | §2.1 Ana's journey (aligned inflation comparison) | — | — |
 | FR-ING-004 (SEC EDGAR ingestion) | §4 Provenance provable | §3 Must-have: Canonical query API | — | — |
@@ -28,7 +28,7 @@
 | FR-AGENT-001 (read-only agent) | §5 Stakeholder: AI Agent (scoped); §7 Risk: hallucination/scope creep | §5: Won't-have — unrestricted AI write access | — | — |
 | FR-AGENT-002 (mandatory attribution) | §4 Provenance provable | AC-P5 | — | — |
 | FR-AGENT-003 (escalation not silent action) | §7 Risk: hallucination/scope creep | §2.5 Ana's journey (agent explains limits) | — | — |
-| FR-OPS-001 (run visibility) | §6 KPI: mean time to detect < 1 hour | §2.4 Omar's journey; AC-P4 | — | — |
+| FR-OPS-001 (run visibility) | §6 KPI: mean time to detect < 1 hour | §2.4 Omar's journey; AC-P4 | `src/common/ingestion_run.py` (recording only — **partial**: dashboard visibility is EPIC-08, not built yet) | `tests/unit/test_ingestion_run.py`; `tests/unit/test_fred_connector.py::TestIngestionRunRecording` |
 | FR-OPS-002 (alerting) | §6 KPI: mean time to detect < 1 hour | §2.4 Omar's journey | — | — |
 | FR-OPS-003 (safe replay) | §7 Risk: silent data quality degradation | §2.4 Omar's journey | — | — |
 

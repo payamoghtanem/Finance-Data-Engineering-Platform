@@ -10,7 +10,7 @@ up next* from this file alone — without access to a prior chat session.
 > row here is incomplete, exactly like an FR without a traceability row.
 
 - **Last updated:** 2026-09-10
-- **Current phase:** Phase 1 — Local MVP, **in progress** (EPIC-01 done, EPIC-02 partial, EPIC-03 done). `main` branch-protected. Phase 1 backlog is live as GitHub Issues (§8). 27 unit tests, 88% coverage.
+- **Current phase:** Phase 1 — Local MVP, **in progress** (EPIC-01 done, EPIC-02 mostly done, EPIC-03 done). `main` branch-protected. Phase 1 backlog is live as GitHub Issues (§8). 40 unit tests, 90% coverage.
 - **Active branch:** `Claude-Code-Agent`
 - **Runtime code exists:** **Yes.** `src/`, `infra/`, `tests/` exist. `pipelines/` (Dagster) does not yet.
 
@@ -36,14 +36,15 @@ up next* from this file alone — without access to a prior chat session.
 - [x] Distributed `CLAUDE.md` context network (root + `docs/` + 9 subfolders).
 - [x] Engineering standards, CI, issue/PR templates, backlog.
 - [x] **EPIC-01** — repository scaffolding (`src/`, `tests/`, `infra/`), config loading, structured logging, Phase 1 `docker-compose` with Prometheus/Grafana.
-- [x] **EPIC-02 (partial)** — FRED connector: fetch, retry/backoff with transient-vs-permanent split, content-addressed immutable raw storage, documented event emission. 15 unit tests.
+- [x] **EPIC-02 (mostly done)** — FRED connector: fetch, retry/backoff with transient-vs-permanent split, content-addressed immutable raw storage, documented event emission, `ingestion_run` recording for every attempt (success and failure — US-02-005). Still open: US-02-006 (vintage awareness) and fact-table idempotency, both genuinely blocked on EPIC-05 (Silver layer), not just unstarted.
 - [x] **EPIC-03** — `S3RawStorage` (real MinIO/S3 backend behind the existing `RawStorage` protocol, US-03-001) and `src/bronze/writer.py` (Bronze lineage — `raw_object_key`/`source_id`/`retrieved_at`/`code_version`, US-03-002; proven to need no network access, US-03-003). `FREDConnector.from_config` now defaults to `S3RawStorage` instead of the local filesystem. 12 new unit tests (all against moto-mocked S3 / in-memory DuckDB — see note below).
 
 ## 3. What is in progress
 
 | Item | State | Owner | Notes |
 |---|---|---|---|
-| EPIC-02 remainder: `ingestion_run` record, DLQ, full idempotency | **Not started** | — | The storage/DB layer EPIC-03 provides is now in place; nothing writes to it yet |
+| US-02-006: vintage awareness | **Not started** | — | Needs the canonical Silver model (EPIC-05) to mean anything real |
+| Fact-table idempotency (rest of US-02-004) | **Not started** | — | Needs the Silver layer (EPIC-05); the raw-layer half is already proven |
 | EPIC-03 — Raw & Bronze with provenance | **Done at unit-test level** | — | Not yet run against a *live* MinIO container — only moto-mocked S3 and in-memory DuckDB. First real run happens naturally once EPIC-07 (Dagster) exercises the full local stack. |
 | Project #6 auto-add workflow | **Blocked — awaiting owner** | human | One-time board setting; see §8. Issues themselves are already seeded. |
 
@@ -56,7 +57,7 @@ The next agent should start at the **top unchecked item**.
 3. [x] ~~Owner decision: approve seeding GitHub Issues~~ — **Done 2026-09-10.** Phase 1 backlog seeded as Issues #13-#58 (see §8). Phase 2-3 epics (EPIC-14..EPIC-24) intentionally not seeded yet, matching `docs/backlog/user-stories.md`'s own rule against decomposing them early.
 4. [x] ~~Optional cleanup: delete superseded branches~~ — **Done.** `QWEN-Code-Agent` and `mvp-implementation-analysis-6b834` are gone (auto-deleted on merge).
 5. [x] ~~EPIC-03: MinIO/S3 backend + Bronze writer~~ — **Done 2026-09-10** (unit-test level; see §3 note on live-MinIO verification).
-6. [ ] **EPIC-02 remainder:** `ingestion_run` record (FR-OPS-001), DLQ routing (FR-OPS-003), end-to-end idempotency test (US-02-004) — the storage layer to write these into now exists (EPIC-03).
+6. [x] ~~EPIC-02 remainder: `ingestion_run` record~~ — **Done 2026-09-10** (US-02-005; see §2 above). DLQ routing was mis-scoped here originally: `docs/backlog/epics.md` actually assigns FR-OPS-003 to **EPIC-09**, which depends on EPIC-06 (event transport) being further along than it is — building DLQ now would jump the epic sequence the backlog itself warns against. Corrected rather than followed blindly.
 7. [ ] **EPIC-07:** Dagster project under `pipelines/` — this directory still does not exist.
 8. [ ] Write `docs/architecture/capacity-model.md` — data volumes at 12/36 months. NFR targets currently have no load model behind them.
 9. [ ] Write `docs/architecture/threat-model.md` — STRIDE pass over ingestion, API, agent, secrets.
@@ -103,7 +104,7 @@ to issue-seeding.
 |---|---|---|---|
 | EPIC-00 (cross-cutting) | [#14](https://github.com/payamoghtanem/Finance-Data-Engineering-Platform/issues/14) | Closed (done) | — |
 | EPIC-01 | [#13](https://github.com/payamoghtanem/Finance-Data-Engineering-Platform/issues/13) | Closed (done) | #27-#30, all closed |
-| EPIC-02 | [#15](https://github.com/payamoghtanem/Finance-Data-Engineering-Platform/issues/15) | Open (partial) | #31-#36: #31,#33 closed; #32,#34 partial (open); #35,#36 open |
+| EPIC-02 | [#15](https://github.com/payamoghtanem/Finance-Data-Engineering-Platform/issues/15) | Open (mostly done) | #31-#36: #31,#33,#35 closed; #32,#34 partial (open, blocked on EPIC-05); #36 open (blocked on EPIC-05) |
 | EPIC-03 | [#16](https://github.com/payamoghtanem/Finance-Data-Engineering-Platform/issues/16) | Closed (done) | #37-#39, all closed |
 | EPIC-04 | [#17](https://github.com/payamoghtanem/Finance-Data-Engineering-Platform/issues/17) | Open | #40-#48, open |
 | EPIC-05 | [#18](https://github.com/payamoghtanem/Finance-Data-Engineering-Platform/issues/18) | Open | #49-#51, open |

@@ -14,6 +14,7 @@ carry the endpoint and series id only.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import time
 from collections.abc import Callable
@@ -24,6 +25,7 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from src.common.config import PlatformConfig
+from src.common.ingestion_run import IngestionRunRecorder
 from src.common.logging_config import setup_logging
 from src.common.raw_storage import (
     LocalRawStorage,
@@ -32,6 +34,7 @@ from src.common.raw_storage import (
     build_object_key,
     compute_sha256,
 )
+from src.common.version import get_code_version
 from src.events.models import EventEnvelope, EventType
 
 
@@ -55,6 +58,8 @@ class FREDConnector:
         raw_storage: Where original payloads are persisted. Injected so the
             MinIO backend can replace the local one in EPIC-03 without touching
             this class, and so tests need no filesystem assumptions.
+        ingestion_run_recorder: Where every run's audit record is written
+            (US-02-005). Injected for the same reason as `raw_storage`.
         log_level: Logging level.
         sleep: Injected sleep, so retry tests do not actually wait.
     """
@@ -69,13 +74,16 @@ class FREDConnector:
         self,
         api_key: str,
         raw_storage: RawStorage | None = None,
+        ingestion_run_recorder: IngestionRunRecorder | None = None,
         log_level: str = "INFO",
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
         self.api_key = api_key
         self.raw_storage: RawStorage = raw_storage or LocalRawStorage("raw_store")
+        self.ingestion_run_recorder = ingestion_run_recorder or IngestionRunRecorder()
         self.logger = setup_logging(__name__, level=log_level)
         self._sleep = sleep
+        self._last_retry_count = 0
 
     def _build_url(self, series_id: str, **extra: str) -> str:
         """Build the request URL. The result contains the API key: never log it."""
@@ -86,6 +94,27 @@ class FREDConnector:
             **extra,
         }
         return f"{self.BASE_URL}/series/observations?{urlencode(params)}"
+
+    def _compute_request_hash(
+        self,
+        series_id: str,
+        realtime_start: str | None = None,
+        realtime_end: str | None = None,
+    ) -> str:
+        """Hash of the request made, excluding the API key.
+
+        Excluding the key keeps the hash reproducible across key rotations —
+        this is about the request's *shape* (which series, which parameters),
+        not which credential fetched it. Hashing is one-way regardless, so
+        including it would not have leaked the key either; excluding it is
+        about reproducibility, not secrecy.
+        """
+        canonical = f"GET {self.BASE_URL}/series/observations?series_id={series_id}"
+        if realtime_start:
+            canonical += f"&realtime_start={realtime_start}"
+        if realtime_end:
+            canonical += f"&realtime_end={realtime_end}"
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
     def fetch_series_raw(
         self,
@@ -117,6 +146,7 @@ class FREDConnector:
                 request = Request(url)  # noqa: S310 - fixed https FRED endpoint
                 request.add_header("User-Agent", self.USER_AGENT)
                 with urlopen(request, timeout=self.REQUEST_TIMEOUT_SECONDS) as response:  # noqa: S310
+                    self._last_retry_count = attempt
                     return bytes(response.read())
 
             except HTTPError as exc:
@@ -162,6 +192,7 @@ class FREDConnector:
             if attempt < self.MAX_RETRIES:
                 self._sleep(delay)
 
+        self._last_retry_count = self.MAX_RETRIES
         raise FREDConnectorError(
             f"Failed to fetch {series_id} after {self.MAX_RETRIES} retries"
         ) from last_error
@@ -198,11 +229,18 @@ class FREDConnector:
         Order matters and is enforced here: fetch bytes -> persist raw -> only
         then parse. Parsing before persisting would make the stored artifact a
         re-serialization rather than the source's own response.
+
+        Every attempt — success or failure — produces exactly one
+        `ingestion_run` record (US-02-005, FR-OPS-001). A failure is recorded
+        and then re-raised: this method never swallows an error to keep the
+        audit trail tidy.
         """
         if correlation_id is None:
             correlation_id = f"fred_{series_id}_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}"
 
         dataset_id = f"fred_{series_id.lower()}"
+        started_at = datetime.now(UTC)
+        request_hash = self._compute_request_hash(series_id)
         self.logger.info(
             "Starting ingestion series=%s correlation_id=%s", series_id, correlation_id
         )
@@ -215,7 +253,20 @@ class FREDConnector:
         )
         self.logger.info("Event %s: %s", requested.event_type.value, requested.event_id)
 
-        raw_payload = self.fetch_series_raw(series_id)
+        try:
+            raw_payload = self.fetch_series_raw(series_id)
+        except FREDConnectorError as exc:
+            self.ingestion_run_recorder.record(
+                dataset_id=dataset_id,
+                connector_version=get_code_version(),
+                started_at=started_at,
+                finished_at=datetime.now(UTC),
+                status="failed",
+                request_hash=request_hash,
+                retry_count=self._last_retry_count,
+                error=str(exc),
+            )
+            raise
 
         retrieved_at = datetime.now(UTC)
         object_key, sha256 = self.store_raw(series_id, raw_payload, retrieved_at)
@@ -234,6 +285,17 @@ class FREDConnector:
         parsed: dict[str, Any] = json.loads(raw_payload.decode("utf-8"))
         observation_count = len(parsed.get("observations", []))
 
+        ingestion_run = self.ingestion_run_recorder.record(
+            dataset_id=dataset_id,
+            connector_version=get_code_version(),
+            started_at=started_at,
+            finished_at=datetime.now(UTC),
+            status="success",
+            request_hash=request_hash,
+            retry_count=self._last_retry_count,
+            raw_storage_path=object_key,
+        )
+
         return {
             "status": "success",
             "series_id": series_id,
@@ -245,18 +307,23 @@ class FREDConnector:
             "observation_count": observation_count,
             "requested_event_id": requested.event_id,
             "received_event_id": received.event_id,
+            "run_id": ingestion_run.run_id,
         }
 
     @classmethod
     def from_config(
-        cls, config: PlatformConfig, raw_storage: RawStorage | None = None
+        cls,
+        config: PlatformConfig,
+        raw_storage: RawStorage | None = None,
+        ingestion_run_recorder: IngestionRunRecorder | None = None,
     ) -> FREDConnector:
         """Build a connector from platform configuration.
 
         Defaults to `S3RawStorage` built from `config.minio` — that config
         section exists specifically to point at the Phase 1 MinIO service in
         `infra/docker-compose.yml`, so this is what actually wires it up
-        (EPIC-03). Pass `raw_storage` explicitly to override, e.g. in tests.
+        (EPIC-03). Pass `raw_storage` / `ingestion_run_recorder` explicitly
+        to override, e.g. in tests.
         """
         if not config.fred_api_key:
             raise ValueError("FRED_API_KEY is required but not set")
@@ -266,5 +333,6 @@ class FREDConnector:
         return cls(
             api_key=config.fred_api_key,
             raw_storage=raw_storage,
+            ingestion_run_recorder=ingestion_run_recorder,
             log_level=config.log_level,
         )

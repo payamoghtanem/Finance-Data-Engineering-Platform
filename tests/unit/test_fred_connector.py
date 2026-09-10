@@ -13,6 +13,7 @@ from urllib.error import HTTPError
 
 import pytest
 from src.common.config import DatabaseConfig, MinIOConfig, PlatformConfig
+from src.common.ingestion_run import IngestionRunRecorder
 from src.common.raw_storage import LocalRawStorage, compute_sha256
 from src.connectors.fred.connector import (
     FREDConnector,
@@ -36,6 +37,7 @@ def _response(payload: bytes = SAMPLE_PAYLOAD) -> MagicMock:
 
 
 def _connector(tmp_path, **kwargs) -> FREDConnector:
+    kwargs.setdefault("ingestion_run_recorder", IngestionRunRecorder(db_path=":memory:"))
     return FREDConnector(
         api_key="test_api_key",
         raw_storage=LocalRawStorage(tmp_path),
@@ -118,7 +120,12 @@ class TestRawStorage:
     def test_stored_bytes_are_byte_identical_to_response(self, mock_urlopen, tmp_path):
         mock_urlopen.return_value = _response()
         storage = LocalRawStorage(tmp_path)
-        connector = FREDConnector(api_key="k", raw_storage=storage, sleep=lambda _: None)
+        connector = FREDConnector(
+            api_key="k",
+            raw_storage=storage,
+            ingestion_run_recorder=IngestionRunRecorder(db_path=":memory:"),
+            sleep=lambda _: None,
+        )
         result = connector.run_ingestion("CPIAUCSL")
         assert storage.get(result["object_key"]) == SAMPLE_PAYLOAD
 
@@ -130,13 +137,21 @@ class TestRawStorage:
 
     def test_store_raw_actually_persists(self, tmp_path):
         storage = LocalRawStorage(tmp_path)
-        connector = FREDConnector(api_key="k", raw_storage=storage)
+        connector = FREDConnector(
+            api_key="k",
+            raw_storage=storage,
+            ingestion_run_recorder=IngestionRunRecorder(db_path=":memory:"),
+        )
         key, _ = connector.store_raw("CPIAUCSL", SAMPLE_PAYLOAD)
         assert storage.exists(key)
 
     def test_storing_same_payload_twice_is_idempotent(self, tmp_path):
         storage = LocalRawStorage(tmp_path)
-        connector = FREDConnector(api_key="k", raw_storage=storage)
+        connector = FREDConnector(
+            api_key="k",
+            raw_storage=storage,
+            ingestion_run_recorder=IngestionRunRecorder(db_path=":memory:"),
+        )
         at = datetime(2026, 9, 10, tzinfo=UTC)
         key1, hash1 = connector.store_raw("CPIAUCSL", SAMPLE_PAYLOAD, at)
         key2, hash2 = connector.store_raw("CPIAUCSL", SAMPLE_PAYLOAD, at)
@@ -196,9 +211,12 @@ class TestConfig:
         # Explicit raw_storage: the default now builds a real S3RawStorage
         # (EPIC-03) that would otherwise try to reach MinIO. See
         # TestFromConfigDefaultsToS3 below for that path, mocked via moto.
+        # Explicit ingestion_run_recorder: the default writes a real DuckDB
+        # file to disk (ops_store/), which a test must never do.
         connector = FREDConnector.from_config(
             self._config(fred_api_key="test_key", log_level="DEBUG"),
             raw_storage=LocalRawStorage(tmp_path),
+            ingestion_run_recorder=IngestionRunRecorder(db_path=":memory:"),
         )
         assert connector.api_key == "test_key"
 
@@ -233,8 +251,73 @@ class TestFromConfigDefaultsToS3:
         # a moto-mocked client. Stubbing it out keeps this test network-free
         # without depending on moto's handling of a custom endpoint_url.
         with patch.object(S3RawStorage, "ensure_bucket", return_value=None) as ensure_bucket:
-            connector = FREDConnector.from_config(self._config(fred_api_key="test_key"))
+            connector = FREDConnector.from_config(
+                self._config(fred_api_key="test_key"),
+                ingestion_run_recorder=IngestionRunRecorder(db_path=":memory:"),
+            )
 
         assert isinstance(connector.raw_storage, S3RawStorage)
         assert connector.raw_storage.bucket == "raw"
         ensure_bucket.assert_called_once()
+
+
+class TestIngestionRunRecording:
+    """US-02-005 / FR-OPS-001: every run, success or failure, is recorded."""
+
+    @patch("src.connectors.fred.connector.urlopen")
+    def test_successful_run_is_recorded(self, mock_urlopen, tmp_path):
+        mock_urlopen.return_value = _response()
+        recorder = IngestionRunRecorder(db_path=":memory:")
+        connector = _connector(tmp_path, ingestion_run_recorder=recorder)
+
+        result = connector.run_ingestion("CPIAUCSL")
+
+        runs = recorder.list_for_dataset("fred_cpiaucsl")
+        assert len(runs) == 1
+        assert runs[0].run_id == result["run_id"]
+        assert runs[0].status == "success"
+        assert runs[0].retry_count == 0
+        assert runs[0].raw_storage_path == result["object_key"]
+        assert runs[0].error is None
+
+    @patch("src.connectors.fred.connector.urlopen")
+    def test_retried_then_successful_run_records_retry_count(self, mock_urlopen, tmp_path):
+        mock_urlopen.side_effect = [
+            HTTPError("url", 503, "Service Unavailable", {}, None),
+            HTTPError("url", 503, "Service Unavailable", {}, None),
+            _response(),
+        ]
+        recorder = IngestionRunRecorder(db_path=":memory:")
+        connector = _connector(tmp_path, ingestion_run_recorder=recorder)
+
+        connector.run_ingestion("CPIAUCSL")
+
+        runs = recorder.list_for_dataset("fred_cpiaucsl")
+        assert runs[0].retry_count == 2
+
+    @patch("src.connectors.fred.connector.urlopen")
+    def test_failed_run_is_recorded_and_exception_still_raised(self, mock_urlopen, tmp_path):
+        mock_urlopen.side_effect = HTTPError("url", 500, "Server Error", {}, None)
+        recorder = IngestionRunRecorder(db_path=":memory:")
+        connector = _connector(tmp_path, ingestion_run_recorder=recorder)
+
+        with pytest.raises(FREDConnectorError):
+            connector.run_ingestion("CPIAUCSL")
+
+        runs = recorder.list_for_dataset("fred_cpiaucsl")
+        assert len(runs) == 1
+        assert runs[0].status == "failed"
+        assert runs[0].raw_storage_path is None
+        assert runs[0].error is not None
+
+    @patch("src.connectors.fred.connector.urlopen")
+    def test_request_hash_excludes_the_api_key(self, mock_urlopen, tmp_path):
+        mock_urlopen.return_value = _response()
+        recorder = IngestionRunRecorder(db_path=":memory:")
+        connector = _connector(tmp_path, ingestion_run_recorder=recorder)
+
+        connector.run_ingestion("CPIAUCSL")
+
+        run = recorder.list_for_dataset("fred_cpiaucsl")[0]
+        assert "test_api_key" not in run.request_hash
+        assert len(run.request_hash) == 64  # sha256 hex digest
