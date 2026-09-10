@@ -89,5 +89,8 @@ state — including the next actionable task and the open decisions currently bl
 
 ## License and status
 
-**No `LICENSE` file has been chosen yet** — this is an open owner decision (D-01 in
-`STATUS.md`) and blocks any public release or outside contribution. Data source usage must respect each source's own license/terms — see `docs/data-sources/catalog.md`.
+**No `LICENSE` file exists, by deliberate choice** (see D-01 in `STATUS.md`) — default
+copyright applies, so all rights are reserved and no one has legal permission to copy,
+modify, or redistribute this code, even though the repository is public. This is
+revisited if external contribution or reuse is ever wanted. Data source usage must
+respect each source's own license/terms regardless — see `docs/data-sources/catalog.md`.
