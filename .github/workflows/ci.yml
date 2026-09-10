@@ -43,16 +43,16 @@ jobs:
           else echo "has_src=false" >> "$GITHUB_OUTPUT"; echo "No src/ yet (Phase 0) - skipping."; fi
 
       - if: steps.guard.outputs.has_src == 'true'
-        run: pip install -e ".[dev]"
+        run: pip install -e ".[dev,orchestration]"
 
       - if: steps.guard.outputs.has_src == 'true'
-        run: ruff check src tests scripts
+        run: ruff check src tests scripts pipelines
 
       - if: steps.guard.outputs.has_src == 'true'
-        run: ruff format --check src tests scripts
+        run: ruff format --check src tests scripts pipelines
 
       - if: steps.guard.outputs.has_src == 'true'
-        run: mypy src
+        run: mypy src pipelines
 
   tests:
     name: Unit tests + coverage (NFR-MAINT-003)
@@ -70,7 +70,7 @@ jobs:
           else echo "has_tests=false" >> "$GITHUB_OUTPUT"; echo "No tests/unit yet (Phase 0) - skipping."; fi
 
       - if: steps.guard.outputs.has_tests == 'true'
-        run: pip install -e ".[dev]"
+        run: pip install -e ".[dev,orchestration]"
 
       - if: steps.guard.outputs.has_tests == 'true'
         run: pytest tests/unit
@@ -101,6 +101,28 @@ jobs:
         env:
           DBT_PROFILES_DIR: ${{ github.workspace }}/src/transform/dbt_project
         run: python scripts/verify_epic05_acceptance.py
+
+  dagster-pipeline:
+    name: Dagster definitions validate (EPIC-07)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Skip if no Dagster project yet
+        id: guard
+        run: |
+          if [ -d pipelines/dagster_project ]; then echo "has_pipeline=true" >> "$GITHUB_OUTPUT";
+          else echo "has_pipeline=false" >> "$GITHUB_OUTPUT"; echo "No Dagster project yet (Phase 0) - skipping."; fi
+
+      - if: steps.guard.outputs.has_pipeline == 'true'
+        run: pip install -e ".[dev,orchestration]"
+
+      - name: Structurally validate assets, resources, jobs, and schedules load
+        if: steps.guard.outputs.has_pipeline == 'true'
+        run: dagster definitions validate -f pipelines/dagster_project/definitions.py
 
   contracts:
     name: Data contract validation (FR-ING-006)

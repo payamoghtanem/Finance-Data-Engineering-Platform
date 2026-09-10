@@ -50,7 +50,7 @@ Each `src/connectors/<name>/` package must contain, per NFR-MAINT-001: `README.m
 | `transform/` (dbt, EPIC-05) | Silver→Gold SQL transforms, canonical conformance (§2d) | Perform network I/O, manage scheduling, write back to Bronze |
 | `serving/api` | Expose Gold data per `api-design.md`, enforce auth/rate limits | Perform transformation logic, write to any table |
 | `serving/agent` | Read-only retrieval + natural-language response per `ai-agent/agentic-ai-design.md` | Any write, delete, schema, or backfill action |
-| `pipelines/dagster_project` | Scheduling, dependency graph, retries, backfills, run visibility | Contain business/transform logic itself — it orchestrates other modules, it doesn't replace them |
+| `pipelines/dagster_project` (EPIC-07) | Scheduling, dependency graph, retries, backfills, run visibility (§2e) | Contain business/transform logic itself — it orchestrates other modules, it doesn't replace them |
 
 ### 2a. Bronze storage shape (`bronze/`, EPIC-03)
 
@@ -170,6 +170,50 @@ Proven against real data: a synthetic FRED payload run through the actual
 a second, later "revision" of the same period to confirm `vintage_date`
 keeps both rows distinct in Silver while Gold's KPI model correctly picks the
 latest vintage per period — not just written and assumed correct.
+
+### 2e. Dagster orchestration (`pipelines/dagster_project/`, EPIC-07)
+
+Three assets wire the existing modules into one scheduled pipeline, in
+dependency order — this module contains no fetch/storage/transform logic of
+its own, per its module boundary above:
+
+| Asset | Calls | Notes |
+|---|---|---|
+| `fred_cpi_raw` | `FREDConnector.run_ingestion` (via `FREDIngestionResource`) | Has a Dagster-level `RetryPolicy` (2 retries, exponential backoff) layered *above* the connector's own per-HTTP-call retry — one covers a single transient response, the other covers the whole materialization failing for any reason. Re-running is safe: raw storage is content-addressed and `ingestion_run` records every attempt regardless (US-02-005). |
+| `fred_cpi_bronze` | `BronzeWriter.write` (via `BronzeResource`) | Depends on `fred_cpi_raw`'s output (object key, checksum, retrieved-at). |
+| `silver_gold_conformance` | `dbt build` (subprocess, same invocation as `scripts/verify_epic05_acceptance.py`) | Depends on `fred_cpi_bronze`. This is what makes `dbt build` automatic instead of the manual step `transform/dbt_project/README.md` describes (EPIC-05's own documented gap). |
+
+**Schedule** (`fred_cpi_daily_schedule`, `schedules.py`): a daily cron
+targeting a job that runs all three assets in order. **Defaults to
+`STOPPED`** — it would fetch from a real external API with a real credential
+on every fire, which must not start just because `Definitions` loaded; an
+operator enables it deliberately from the Dagster UI. The cron cadence is
+illustrative (daily, not release-calendar-aware) — FRED's own
+`freshness_slo` is "typically mid-month," and a daily poll is deliberately
+over-frequent rather than under, since a no-op re-fetch of unchanged data is
+cheap (content-addressed raw storage, idempotent Bronze write).
+
+**Run visibility** (FR-OPS-001) comes from Dagster's own UI (`dagster dev`)
+once these `Definitions` are loaded — status, duration, and a failure's
+stack trace/logs are visible per run, satisfying the requirement for the
+orchestrated pipeline specifically. A dedicated cross-cutting operator
+dashboard (Grafana, EPIC-08) is still separate, not built.
+
+**Honest scope limit**: US-07-001's acceptance criterion is "≥95% unattended
+success, measured over ≥3 consecutive days" (NFR-AVAIL-002) — that is a
+measurement of real elapsed operation, not something a build or test run can
+produce. What's proven here is the mechanism: `tests/unit/test_dagster_pipeline.py`
+materializes the fetch→Bronze chain end-to-end against fake resources (no
+live network/S3), and CI's `dagster-pipeline` job runs `dagster definitions
+validate` to catch a structural wiring mistake (a bad dependency, an
+unloadable resource) before merge. The 3-day success-rate metric itself is
+measured once an operator turns the schedule on.
+
+A `from __future__ import annotations` import is deliberately absent from
+`assets.py` (unlike every other module in this repo): Dagster's `@asset`
+decorator validates the `context` parameter's type by identity against
+`AssetExecutionContext`, and PEP 563's postponed evaluation breaks that
+check — confirmed empirically while building this, not a style choice.
 
 ## 3. Retry / backoff algorithm (implements FR-ING-001 etc.)
 

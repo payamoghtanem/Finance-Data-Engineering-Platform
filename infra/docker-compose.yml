@@ -74,23 +74,16 @@ services:
     networks:
       - finance_network
 
-  # dbt Core: Bronze→Silver→Gold transforms (invoked by Dagster)
-  dbt:
-    image: ghcr.io/dbt-labs/dbt-postgres:1.7
-    container_name: finance_dbt
-    working_dir: /usr/app
-    volumes:
-      - ./src/transform/dbt_project:/usr/app
-      - ./src:/opt/src
-    environment:
-      - DBT_PROFILES_DIR=/usr/app
-      - POSTGRES_HOST=postgres
-      - POSTGRES_PORT=5432
-      - POSTGRES_DB=${POSTGRES_DB:-finance_platform}
-      - POSTGRES_USER=${POSTGRES_USER:-platform}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-change_me_locally}
-    networks:
-      - finance_network
+  # dbt Core: no standalone service. Per this file's own header comment and
+  # technical-design-document.md §6 ("invoked by dagster, not standalone
+  # long-running"), dbt runs as a subprocess from inside the `dagster`
+  # container (pipelines/dagster_project/assets.py's silver_gold_conformance
+  # asset) against dbt-duckdb (src/transform/dbt_project/profiles.yml) --
+  # not a separate always-running container. A prior version of this file
+  # had a `dbt:` service using the dbt-postgres image/adapter, which both
+  # contradicted that design and was never actually invoked by anything.
+  # Removed rather than left to silently drift further from EPIC-05's real
+  # implementation.
 
   # Metabase: dashboards over Gold models
   metabase:

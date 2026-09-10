@@ -28,7 +28,7 @@
 | FR-AGENT-001 (read-only agent) | §5 Stakeholder: AI Agent (scoped); §7 Risk: hallucination/scope creep | §5: Won't-have — unrestricted AI write access | — | — |
 | FR-AGENT-002 (mandatory attribution) | §4 Provenance provable | AC-P5 | — | — |
 | FR-AGENT-003 (escalation not silent action) | §7 Risk: hallucination/scope creep | §2.5 Ana's journey (agent explains limits) | — | — |
-| FR-OPS-001 (run visibility) | §6 KPI: mean time to detect < 1 hour | §2.4 Omar's journey; AC-P4 | `src/common/ingestion_run.py` (recording only — **partial**: dashboard visibility is EPIC-08, not built yet) | `tests/unit/test_ingestion_run.py`; `tests/unit/test_fred_connector.py::TestIngestionRunRecording` |
+| FR-OPS-001 (run visibility) | §6 KPI: mean time to detect < 1 hour | §2.4 Omar's journey; AC-P4 | `src/common/ingestion_run.py` (recording); `pipelines/dagster_project/` (EPIC-07) gives the orchestrated pipeline real status/duration/failure-link visibility through Dagster's own UI (`dagster dev`) — **partial**: a dedicated cross-cutting operator dashboard (Grafana, EPIC-08) still doesn't exist | `tests/unit/test_ingestion_run.py`; `tests/unit/test_fred_connector.py::TestIngestionRunRecording`; `tests/unit/test_dagster_pipeline.py` |
 | FR-OPS-002 (alerting) | §6 KPI: mean time to detect < 1 hour | §2.4 Omar's journey | — | — |
 | FR-OPS-003 (safe replay) | §7 Risk: silent data quality degradation | §2.4 Omar's journey | — | — |
 
@@ -36,7 +36,7 @@
 
 | Requirement | BRD goal / risk | NFR detail | Implementation verification |
 |---|---|---|---|
-| NFR-AVAIL-001..003 | §6 KPI: job success rate ≥ 99% | `NFR.md` §1 | — |
+| NFR-AVAIL-001..003 | §6 KPI: job success rate ≥ 99% | `NFR.md` §1 | NFR-AVAIL-002: `pipelines/dagster_project/schedules.py` — daily schedule + a Dagster-level `RetryPolicy` on the fetch asset, layered above `FREDConnector`'s own per-call retry — **partial**: the ≥95%-over-≥3-consecutive-days success rate itself is a measurement of real elapsed operation, not something any single build/test run can produce; the mechanism is built and structurally validated (`tests/unit/test_dagster_pipeline.py`, `dagster definitions validate` in CI), the metric is measured once an operator enables the schedule |
 | NFR-FRESH-001..003 | §6 KPI: freshness SLO ≥ 95% | `NFR.md` §2 | — |
 | NFR-RPO-001, NFR-RTO-001..002 | §6 KPI: recovery time < 4h | `NFR.md` §3 | — |
 | NFR-PERF-001..003 | §4 Value proposition: reproducible, fast analysis | `NFR.md` §4 | — |
