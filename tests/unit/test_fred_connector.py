@@ -20,6 +20,7 @@ from src.connectors.fred.connector import (
     FREDConnectorError,
     FREDPermanentError,
 )
+from src.events.bus import EventBus
 from src.events.models import EventType
 
 SAMPLE_PAYLOAD = json.dumps({"observations": [{"date": "2024-01-01", "value": "308.417"}]}).encode(
@@ -183,6 +184,32 @@ class TestEventEmission:
             "gold_data.published",
             "data_product.ready",
         }
+
+    @patch("src.connectors.fred.connector.urlopen")
+    def test_events_are_actually_published_not_just_constructed(self, mock_urlopen, tmp_path):
+        """EPIC-06: a subscriber sees these events only via the bus, proving
+        run_ingestion publishes them rather than merely building objects."""
+        mock_urlopen.return_value = _response()
+        bus = EventBus()
+        connector = _connector(tmp_path, event_bus=bus)
+
+        connector.run_ingestion("CPIAUCSL")
+
+        published_types = {e.event_type for e in bus.history()}
+        assert EventType.INGESTION_REQUESTED in published_types
+        assert EventType.RAW_DATA_RECEIVED in published_types
+
+    @patch("src.connectors.fred.connector.urlopen")
+    def test_a_subscriber_actually_fires_on_ingestion(self, mock_urlopen, tmp_path):
+        mock_urlopen.return_value = _response()
+        bus = EventBus()
+        seen: list[str] = []
+        bus.subscribe(EventType.RAW_DATA_RECEIVED, lambda e: seen.append(e.dataset_id))
+        connector = _connector(tmp_path, event_bus=bus)
+
+        connector.run_ingestion("CPIAUCSL")
+
+        assert seen == ["fred_cpiaucsl"]
 
 
 class TestConfig:

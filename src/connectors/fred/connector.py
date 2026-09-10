@@ -35,6 +35,7 @@ from src.common.raw_storage import (
     compute_sha256,
 )
 from src.common.version import get_code_version
+from src.events.bus import EventBus
 from src.events.models import EventEnvelope, EventType
 
 
@@ -60,6 +61,9 @@ class FREDConnector:
             this class, and so tests need no filesystem assumptions.
         ingestion_run_recorder: Where every run's audit record is written
             (US-02-005). Injected for the same reason as `raw_storage`.
+        event_bus: Where documented events are actually published (EPIC-06),
+            not just constructed and logged. Defaults to a fresh, private
+            `EventBus` — pass a shared one to let another component subscribe.
         log_level: Logging level.
         sleep: Injected sleep, so retry tests do not actually wait.
     """
@@ -75,12 +79,14 @@ class FREDConnector:
         api_key: str,
         raw_storage: RawStorage | None = None,
         ingestion_run_recorder: IngestionRunRecorder | None = None,
+        event_bus: EventBus | None = None,
         log_level: str = "INFO",
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
         self.api_key = api_key
         self.raw_storage: RawStorage = raw_storage or LocalRawStorage("raw_store")
         self.ingestion_run_recorder = ingestion_run_recorder or IngestionRunRecorder()
+        self.event_bus = event_bus or EventBus()
         self.logger = setup_logging(__name__, level=log_level)
         self._sleep = sleep
         self._last_retry_count = 0
@@ -251,6 +257,7 @@ class FREDConnector:
             dataset_id=dataset_id,
             correlation_id=correlation_id,
         )
+        self.event_bus.publish(requested)
         self.logger.info("Event %s: %s", requested.event_type.value, requested.event_id)
 
         try:
@@ -279,6 +286,7 @@ class FREDConnector:
             payload_reference=object_key,
             metadata={"sha256": sha256, "series_id": series_id},
         )
+        self.event_bus.publish(received)
         self.logger.info("Event %s: %s", received.event_type.value, received.event_id)
 
         # Parsed only after the original bytes are safely persisted.

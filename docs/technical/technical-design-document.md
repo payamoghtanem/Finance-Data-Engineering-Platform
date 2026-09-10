@@ -44,6 +44,7 @@ Each `src/connectors/<name>/` package must contain, per NFR-MAINT-001: `README.m
 | Module | Responsibility | Must NOT do |
 |---|---|---|
 | `connectors/*` | Fetch from one external source, write raw response to Raw Storage, emit `raw_data.received` | Parse business meaning, write to Silver/Gold, know about other connectors |
+| `events/` | The event envelope and the Phase 1 in-process transport (`EventBus`, EPIC-06, ADR-0002) — `publish`/`subscribe`, isolating one subscriber's failure from others and from the publisher | Contain business logic; know what a specific event *means* to its consumers |
 | `validation/` | Check schema + data contract + quality rules, emit `raw_data.validated` or `raw_data.quarantined` | Fetch data itself, transform/rename fields for business meaning |
 | `bronze/` | Load one raw object into Bronze with lineage back to it (`raw_object_key`, `source_id`, `retrieved_at`, `code_version`), emit `bronze_data.written`. Reads only from `RawStorage` — never re-fetches from the source (ARD §2.2) | Parse business fields into typed/canonical columns (that's `transform/`'s job, FR-MODEL-001), fetch data itself |
 | `transform/` (dbt) | Silver→Gold SQL transforms, canonical conformance | Perform network I/O, manage scheduling |

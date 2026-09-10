@@ -56,8 +56,8 @@ schedule.triggered
 
 ## 4. Transport by phase (see ADR-0002)
 
-- **Phase 1**: events are function calls / Dagster's native asset-event mechanism within a single process or docker-compose network — no external broker.
-- **Phase 2+**: the same event types and envelope are published to Apache Kafka topics (one topic family per event type, e.g., `raw_data.received`), enabling independent scaling of producers and consumers, and true replay from a topic offset.
+- **Phase 1**: `src/events/bus.py`'s `EventBus` — synchronous, in-process publish/subscribe (EPIC-06). No external broker; a subscriber only ever learns of upstream work through a `publish()` call, never a bare "the script ran" signal (US-06-001). Currently wired as each producer's own module gets built: `connectors/fred` publishes `ingestion.requested`/`raw_data.received`; `bronze/` publishes `bronze_data.written`. The remaining producers in the catalog above (Dagster, the validation job, Silver/Gold) don't exist yet — see `STATUS.md` for what's actually done.
+- **Phase 2+**: the same event types and envelope are published to Apache Kafka topics (one topic family per event type, e.g., `raw_data.received`), enabling independent scaling of producers and consumers, and true replay from a topic offset. `EventBus`'s `publish`/`subscribe` shape is what a Kafka-backed implementation replaces behind (EPIC-15) — a consumer written against it does not change.
 
 ## 5. Schema evolution policy for events
 
