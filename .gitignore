@@ -32,6 +32,7 @@ data/
 raw_store/
 bronze_store/
 ops_store/
+transform_store/
 *.parquet
 *.duckdb
 *.sqlite
@@ -44,6 +45,7 @@ logs/
 # dbt
 target/
 dbt_packages/
+.user.yml
 
 # Dagster
 .dagster/

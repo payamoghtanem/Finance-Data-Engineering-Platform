@@ -47,7 +47,7 @@ Each `src/connectors/<name>/` package must contain, per NFR-MAINT-001: `README.m
 | `events/` | The event envelope and the Phase 1 in-process transport (`EventBus`, EPIC-06, ADR-0002) — `publish`/`subscribe`, isolating one subscriber's failure from others and from the publisher | Contain business logic; know what a specific event *means* to its consumers |
 | `validation/` (EPIC-04) | Check schema + data contract + quality rules against a batch of already-parsed records, emit `raw_data.validated` or `raw_data.quarantined` (§2c) | Fetch data itself, transform/rename fields for business meaning, parse a source's raw payload into record shape (that's a connector's job) |
 | `bronze/` | Load one raw object into Bronze with lineage back to it (`raw_object_key`, `source_id`, `retrieved_at`, `code_version`), emit `bronze_data.written`. Reads only from `RawStorage` — never re-fetches from the source (ARD §2.2) | Parse business fields into typed/canonical columns (that's `transform/`'s job, FR-MODEL-001), fetch data itself |
-| `transform/` (dbt) | Silver→Gold SQL transforms, canonical conformance | Perform network I/O, manage scheduling |
+| `transform/` (dbt, EPIC-05) | Silver→Gold SQL transforms, canonical conformance (§2d) | Perform network I/O, manage scheduling, write back to Bronze |
 | `serving/api` | Expose Gold data per `api-design.md`, enforce auth/rate limits | Perform transformation logic, write to any table |
 | `serving/agent` | Read-only retrieval + natural-language response per `ai-agent/agentic-ai-design.md` | Any write, delete, schema, or backfill action |
 | `pipelines/dagster_project` | Scheduling, dependency graph, retries, backfills, run visibility | Contain business/transform logic itself — it orchestrates other modules, it doesn't replace them |
@@ -123,6 +123,53 @@ connector's raw bytes into the contract's record shape (e.g. FRED's
 `observed_at`/`value`/`source_id`/...), which doesn't exist for any
 connector yet. What exists now is the rule engine itself, callable directly
 once such a parser lands.
+
+### 2d. Silver/Gold dbt project (`src/transform/dbt_project/`, EPIC-05)
+
+A real `dbt-duckdb` project — no new infrastructure, per the same reasoning
+as Bronze and `ingestion_run` (§2a/§2b): DuckDB is already the Phase 1 query
+engine. It reads Bronze **in place** via dbt-duckdb's `attach` feature
+(`profiles.yml` attaches `bronze_store/bronze.duckdb` read-only, aliased
+`bronze_db`) rather than copying Bronze data anywhere — `transform/` conforms
+what `bronze/` already wrote, it never re-fetches from a source and never
+writes back to Bronze (module boundary table, §2).
+
+**Silver** — `models/silver/fact_economic_observation.sql` parses Bronze's
+untouched raw JSON payload in place (DuckDB's `json_each`/`json_extract` over
+`decode(payload)`; the payload is stored as `BLOB`, and DuckDB's `BLOB::VARCHAR`
+cast does *not* UTF-8 decode it — `decode()` does) and conforms it to the
+canonical shape in `data-model.md`. `seeds/seed_dataset_indicator_map.csv` is
+what makes this source-agnostic: it routes a connector's raw `dataset_id` to
+a canonical `indicator_id`/`geo_code`, so a second source conforms by adding a
+mapping row and a parsing branch, not by changing the table's shape.
+
+**Gold** — `models/gold/fact_economic_kpi.sql` computes month-over-month and
+year-over-year % change exactly once (FR-MODEL-003), reading only from the
+Silver model above; no dashboard or API handler is permitted to recompute this
+logic itself.
+
+**Time fields (FR-MODEL-002)** — `period`/`period_start`/`period_end` are
+computed once in the Silver model from the source's own date, never derived
+again downstream; `vintage_date` is FRED's `realtime_start` (the date a
+revision became the known value — standard ALFRED/FRED vintage semantics);
+`retrieved_at` is copied from Bronze's own `retrieved_at`; `processed_at` is
+the dbt run's own `run_started_at`, distinct from `retrieved_at` by
+construction; `published_at` is left `NULL` for FRED rather than faked as a
+copy of `vintage_date` — FRED's per-observation JSON does not expose a
+publication timestamp distinct from it. A singular dbt test
+(`tests/assert_fact_economic_observation_time_fields_distinct.sql`) fails the
+build if `period_start` ever equals `period_end`, or if `processed_at`
+precedes `retrieved_at` — either would mean two of these fields got aliased
+together instead of independently populated.
+
+**Honest scope limits**: only FRED feeds this today — Eurostat doesn't exist
+yet (EPIC-14). Nothing invokes `dbt build` automatically; it's a manual step
+(`src/transform/dbt_project/README.md`) until EPIC-07 (Dagster) schedules it.
+Proven against real data: a synthetic FRED payload run through the actual
+`BronzeWriter` into a real Bronze row, then `dbt build` end-to-end, including
+a second, later "revision" of the same period to confirm `vintage_date`
+keeps both rows distinct in Silver while Gold's KPI model correctly picks the
+latest vintage per period — not just written and assumed correct.
 
 ## 3. Retry / backoff algorithm (implements FR-ING-001 etc.)
 

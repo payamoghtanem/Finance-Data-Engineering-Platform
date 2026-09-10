@@ -1,0 +1,27 @@
+name: finance_data_platform
+version: "1.0.0"
+config-version: 2
+
+profile: finance_data_platform
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+test-paths: ["tests"]
+macro-paths: ["macros"]
+
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+models:
+  finance_data_platform:
+    silver:
+      +materialized: table
+      +schema: silver
+    gold:
+      +materialized: table
+      +schema: gold
+
+seeds:
+  finance_data_platform:
+    +schema: seed

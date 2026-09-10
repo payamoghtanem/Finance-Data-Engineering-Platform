@@ -1,0 +1,26 @@
+version: 2
+
+sources:
+  - name: bronze
+    description: >
+      Bronze layer written by src/bronze/writer.py (EPIC-03). Read-only here —
+      per the module boundary in technical-design-document.md §2, `transform/`
+      conforms Bronze into Silver/Gold and never writes back to Bronze.
+    database: bronze_db
+    schema: main
+    tables:
+      - name: bronze_raw_records
+        description: One row per raw object loaded into Bronze, per technical-design-document.md §2a.
+        columns:
+          - name: bronze_id
+            description: Deterministic hash of raw_object_key.
+          - name: dataset_id
+            description: Which connector dataset this row came from, e.g. fred_cpiaucsl.
+          - name: source_id
+            description: Which source produced this row, e.g. fred.
+          - name: payload
+            description: The untouched raw JSON response, as bytes.
+          - name: retrieved_at
+            description: When the connector fetched this payload from the source.
+          - name: ingested_at
+            description: When this row was written into Bronze (distinct from retrieved_at).

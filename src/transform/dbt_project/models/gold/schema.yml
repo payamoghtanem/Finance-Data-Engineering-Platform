@@ -1,0 +1,21 @@
+version: 2
+
+models:
+  - name: fact_economic_kpi
+    description: >
+      Month-over-month and year-over-year % change for each indicator/geo,
+      computed once (FR-MODEL-003) so two charts reading this table cannot
+      disagree.
+    columns:
+      - name: indicator_id
+        tests: [not_null]
+      - name: geo_code
+        tests: [not_null]
+      - name: period
+        tests: [not_null]
+      - name: value
+        tests: [not_null]
+      - name: mom_pct_change
+        description: "(value - prior month's value) / prior month's value * 100. NULL when no prior month exists."
+      - name: yoy_pct_change
+        description: "(value - value 12 periods ago) / that value * 100. NULL when no prior-year value exists."

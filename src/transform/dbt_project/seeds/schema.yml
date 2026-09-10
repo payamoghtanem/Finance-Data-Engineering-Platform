@@ -1,0 +1,43 @@
+version: 2
+
+seeds:
+  - name: seed_dim_source
+    description: >
+      dim_source (data-model.md §2), seeded rather than ingested since it's
+      slow-changing reference data. **license_url/terms_version/
+      redistribution_allowed/attribution_text/rate_limit_notes are
+      intentionally blank** -- not verified against a real license review
+      yet. Populate from a confirmed review before this is used for
+      anything beyond local development, per NFR-SEC-003/ARD §2.7.
+    columns:
+      - name: source_id
+        tests: [not_null, unique]
+      - name: trust_tier
+        tests:
+          - accepted_values:
+              arguments:
+                values: ["official", "licensed_commercial", "reputable_media_analytics", "community_unofficial"]
+
+  - name: seed_dim_indicator
+    description: dim_indicator (data-model.md §2).
+    columns:
+      - name: indicator_id
+        tests: [not_null, unique]
+      - name: seasonal_adjustment
+        tests:
+          - accepted_values:
+              arguments:
+                values: ["sa", "nsa", "unknown"]
+
+  - name: seed_dataset_indicator_map
+    description: >
+      Routing config, not a documented data-model.md dimension: which raw
+      connector dataset_id feeds which canonical indicator_id/geo_code. See
+      technical-design-document.md §2d.
+    columns:
+      - name: dataset_id
+        tests: [not_null, unique]
+      - name: indicator_id
+        tests: [not_null]
+      - name: geo_code
+        tests: [not_null]
