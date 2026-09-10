@@ -17,3 +17,11 @@ If you add a requirement to `FRD.md` or `NFR.md`, you **must** add a row to `tra
 
 - Requirements here describe *what*, never *how*. "The system must retry a transient ingestion failure up to 3 times with exponential backoff" is a valid FR. "The system must use Python's `tenacity` library" is not — that's `../technical/technical-design-document.md`.
 - Every FR in a given data domain should be consistent with the source's trust tier and license terms recorded in `../data-sources/catalog.md` — don't write a requirement to redistribute data a source's license forbids.
+
+## Current status
+
+- **This folder:** Stable — 26 FRs and 10 NFR groups, all traced.
+- `scripts/check_traceability.sh` enforces the matrix rule in CI. Implementation/Test columns fill in as stories land.
+
+**Live project state is in `/STATUS.md`, not here** — it records what is done, in
+progress, and next. Do not duplicate that state into this file; it will drift.

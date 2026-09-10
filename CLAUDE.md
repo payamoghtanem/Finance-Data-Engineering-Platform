@@ -2,13 +2,18 @@
 
 You are an LLM/agent (Claude Code or similar) that just landed in this repository. This file is your orientation. Read it before touching anything. Every subfolder under `docs/` has its own `CLAUDE.md` scoped to that folder — go there once you know which part of the system you're working on.
 
+> **Read `STATUS.md` immediately after this file.** It is the single source of truth for
+> what is done, what is in progress, and what to pick up next. This file tells you how the
+> project is *shaped*; `STATUS.md` tells you where it *stands*. Never infer current state
+> from a prior chat session — it is not durable. `STATUS.md` is.
+
 ## What this project is
 
 **Finance & Economic Data Engineering Platform** — a free-to-start, cloud-ready, modular, secure, agentic-AI-assisted platform that ingests financial, economic, trade, and crypto data from official/licensed free sources, proves its provenance and quality, conforms it to a canonical model, and serves it through APIs and dashboards. Full narrative: `README.md` and `docs/01-executive-summary-and-recommendation.md`.
 
 ## Current phase
 
-**Documentation / design phase.** There is no runtime code yet (`src/`, `pipelines/`, `infra/` do not exist yet). Everything under `docs/` is the frozen design that future implementation work must follow. If you are asked to write code, first check whether the relevant design doc under `docs/technical/` or `docs/architecture/` already specifies the shape of what you're building — do not improvise a different schema, API contract, or module boundary than what's documented. If a doc is silent or wrong for the task at hand, update the doc in the same change, don't silently diverge.
+**Documentation / design phase; execution scaffolding in place.** Live state lives in `STATUS.md` — consult it rather than this paragraph for anything time-sensitive. There is no runtime code yet (`src/`, `pipelines/`, `infra/` do not exist yet). Everything under `docs/` is the frozen design that future implementation work must follow. If you are asked to write code, first check whether the relevant design doc under `docs/technical/` or `docs/architecture/` already specifies the shape of what you're building — do not improvise a different schema, API contract, or module boundary than what's documented. If a doc is silent or wrong for the task at hand, update the doc in the same change, don't silently diverge.
 
 Roadmap phases (see `docs/roadmap/mvp-plan.md` for full detail):
 1. **Local MVP** — Docker Compose on a laptop: Python + PostgreSQL + MinIO + Dagster + dbt Core + DuckDB + Metabase + Prometheus/Grafana.
@@ -35,8 +40,14 @@ Full rationale for each: `docs/architecture/ARD.md` §2.
 ```
 .
 ├── CLAUDE.md                     ← you are here
+├── STATUS.md                     LIVE STATE: what's done, in progress, next — read this second
 ├── README.md                     Human-facing overview + doc index
-├── PLAN.md                       Living project plan: scope, sequencing, status
+├── PLAN.md                       Original design-phase plan (historical record)
+├── CONTRIBUTING.md               How to work here: order of work, setup, PR rules
+├── SECURITY.md                   Reporting, secrets posture, incident response
+├── scripts/                      check_doc_links.sh, check_traceability.sh (run by CI)
+├── .github/                      CI workflows, issue templates, PR template
+├── .claude/                      Agent harness config: permissions + slash commands
 └── docs/
     ├── CLAUDE.md                 Context for the docs/ tree
     ├── 00-glossary.md            Canonical term definitions — check here before assuming a term's meaning
@@ -49,6 +60,8 @@ Full rationale for each: `docs/architecture/ARD.md` §2.
     ├── ai-agent/                 CLAUDE.md + agentic-ai-design.md (this file's own governing spec)
     ├── methodology/              CLAUDE.md + edd-sdd-tdd.md (how this project is actually built)
     ├── learning-guide/           CLAUDE.md + system-design-guide.md (standalone teaching document)
+    ├── backlog/                  CLAUDE.md + epics.md, user-stories.md, definition-of-ready/done
+    ├── engineering/              CLAUDE.md + engineering-standards.md, test-strategy.md
     └── roadmap/                  CLAUDE.md + mvp-plan.md
 ```
 
@@ -67,6 +80,10 @@ Full rationale for each: `docs/architecture/ARD.md` §2.
 | Check a non-functional target (latency, SLA, freshness) | `docs/requirements/NFR.md` |
 | Understand full requirement traceability | `docs/requirements/SRS.md` and `docs/requirements/traceability-matrix.md` |
 | Just learn how to design a system like this | `docs/learning-guide/system-design-guide.md` — written to stand alone, no other doc required |
+| Know what to work on next | `STATUS.md` §4, then `docs/backlog/user-stories.md` |
+| Write any code at all | `docs/engineering/engineering-standards.md` — binding, enforced in CI |
+| Know when a task is finished | `docs/backlog/definition-of-done.md` |
+| Write or plan tests | `docs/engineering/test-strategy.md` |
 
 ## Working conventions for agents in this repo
 
@@ -75,4 +92,6 @@ Full rationale for each: `docs/architecture/ARD.md` §2.
 - **Traceability**: every functional requirement (FR-xxx) in `docs/requirements/FRD.md` must appear in `docs/requirements/traceability-matrix.md` linked back to a BRD/PRD goal. If you add an FR, add the traceability row.
 - **ADRs are append-only**: never edit a merged ADR's decision; if a decision changes, write a new ADR that supersedes it and say so explicitly in both files.
 - **Git workflow**: develop on `Claude-Code-Agent`, commit with descriptive messages, push with `-u origin Claude-Code-Agent`, open PRs against `main`. Never force-push, never rewrite shared history, never skip hooks.
+- **State is durable, sessions are not**: update `STATUS.md` in the same change as the work it describes. A completed task that doesn't move its row in `STATUS.md` is not finished — the next agent, on a different tool, has no other way to know.
+- **No orphan work**: every task traces to a story, every story to an `FR-xxx`/`NFR-xxx`. See `docs/backlog/CLAUDE.md`.
 - **Docs are the contract**: if implementation code (once it exists) needs to diverge from a design doc, update the doc in the same PR — the docs must never silently drift from reality.

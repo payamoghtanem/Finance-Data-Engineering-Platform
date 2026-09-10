@@ -1,0 +1,60 @@
+[project]
+name = "finance-data-platform"
+version = "0.1.0"
+description = "Finance & Economic Data Engineering Platform"
+requires-python = ">=3.11"
+readme = "README.md"
+
+# Runtime dependencies are added in EPIC-01 as modules land.
+# Pinning happens in the committed lockfile, not here.
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "pytest-cov>=5.0",
+  "mypy>=1.10",
+  "ruff>=0.5",
+  "pre-commit>=3.7",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+# E/W pycodestyle, F pyflakes, I isort, B bugbear, C4 comprehensions,
+# UP pyupgrade, S bandit-style security, T20 flake8-print (no print in src)
+select = ["E", "W", "F", "I", "B", "C4", "UP", "S", "T20"]
+ignore = ["E501"]  # line length is handled by the formatter
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "T20"]  # asserts and prints are fine in tests
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unreachable = true
+disallow_untyped_defs = true
+disallow_any_generics = true
+no_implicit_optional = true
+show_error_codes = true
+exclude = ["^tests/fixtures/"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers --cov=src --cov-report=term-missing"
+markers = [
+  "integration: requires local docker-compose services",
+  "data_quality: asserts properties of stored data",
+]
+
+[tool.coverage.report]
+# NFR-MAINT-003: >= 80% on core pipeline logic
+fail_under = 80
+show_missing = true

@@ -21,3 +21,11 @@ Skipping straight to step 3 ("vibe coding") is explicitly the anti-pattern this 
 - EDD's event shapes are formally specified in `../technical/event-schema.md` — this file explains *why* events drive the flow; that file specifies exactly *what* each event looks like.
 - SDD's "specification as executable contract" maps directly onto `../requirements/FRD.md` (behavioral spec) and `../technical/data-model.md` / `../data-sources/catalog.md` (data contracts).
 - TDD's tests are the acceptance criteria referenced throughout `../requirements/` — a requirement without a corresponding test plan is incomplete.
+
+## Current status
+
+- **This folder:** Stable.
+- The order of work here is enforced per-story by `../backlog/definition-of-done.md`.
+
+**Live project state is in `/STATUS.md`, not here** — it records what is done, in
+progress, and next. Do not duplicate that state into this file; it will drift.

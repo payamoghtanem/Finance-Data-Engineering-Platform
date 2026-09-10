@@ -1,0 +1,24 @@
+name: Docs
+
+on:
+  pull_request:
+  push:
+    branches: [main, Claude-Code-Agent]
+
+permissions:
+  contents: read
+
+jobs:
+  link-check:
+    name: Relative link check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./scripts/check_doc_links.sh
+
+  traceability:
+    name: Every FR has a traceability row
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./scripts/check_traceability.sh

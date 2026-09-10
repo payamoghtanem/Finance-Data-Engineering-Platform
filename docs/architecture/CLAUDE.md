@@ -22,3 +22,11 @@ The "how, at a structural level, and why this way" layer.
 
 - `../requirements/FRD.md` and `../requirements/NFR.md` state *what* the system must do; this folder states *how it's structured* to do it. A requirement should never silently assume an architecture choice that isn't documented here.
 - `../technical/` goes one level deeper than this folder: this folder says "Lakehouse with Iceberg on object storage"; `../technical/data-model.md` says the actual table DDL.
+
+## Current status
+
+- **This folder:** Stable — ARD, Solution Design, and ADR-0001..0004 complete.
+- Open gaps: no threat model (DEBT-04) and only one diagram (DEBT-02). Use `decisions/ADR-0000-template.md` for any new ADR.
+
+**Live project state is in `/STATUS.md`, not here** — it records what is done, in
+progress, and next. Do not duplicate that state into this file; it will drift.

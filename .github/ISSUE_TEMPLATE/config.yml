@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Project status and next actions
+    url: https://github.com/payamoghtanem/Finance-Data-Engineering-Platform/blob/main/STATUS.md
+    about: Check STATUS.md before opening work - it lists what is done and what is next.

@@ -18,3 +18,11 @@ Once implementation begins, `src/`, `pipelines/`, and `infra/` (not yet created)
 - This folder is downstream of `../architecture/`: architecture says "Lakehouse, Bronze/Silver/Gold, Iceberg tables"; this folder says exactly which columns exist in which Silver table.
 - This folder is downstream of `../requirements/FRD.md`: every `FR-ING-xxx` requirement should be satisfiable by something concretely specified here (an endpoint, a table, an event).
 - Data types and units used here (e.g., `decimal(20,8)` for prices, UTC timestamps) must be consistent with `../requirements/NFR.md` precision/latency targets and `../data-sources/catalog.md` source semantics (e.g., a source's native currency/unit).
+
+## Current status
+
+- **This folder:** Stable — data model, API, event schema, and TDD complete.
+- No code implements these yet. `src/` lands in EPIC-01; this folder is what it must match.
+
+**Live project state is in `/STATUS.md`, not here** — it records what is done, in
+progress, and next. Do not duplicate that state into this file; it will drift.

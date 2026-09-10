@@ -36,16 +36,16 @@
 
 | Requirement | BRD goal / risk | NFR detail | Implementation verification |
 |---|---|---|---|
-| NFR-AVAIL-001..003 | §6 KPI: job success rate ≥ 99% | `../NFR.md` §1 | — |
-| NFR-FRESH-001..003 | §6 KPI: freshness SLO ≥ 95% | `../NFR.md` §2 | — |
-| NFR-RPO-001, NFR-RTO-001..002 | §6 KPI: recovery time < 4h | `../NFR.md` §3 | — |
-| NFR-PERF-001..003 | §4 Value proposition: reproducible, fast analysis | `../NFR.md` §4 | — |
-| NFR-SEC-001..005 | §7 Risk: secret leakage, license/legal exposure | `../NFR.md` §5 | — |
-| NFR-GOV-001..003 | §6 KPI: 100% complete metadata | `../NFR.md` §6 | — |
-| NFR-MAINT-001..003 | §7 Risk: over-engineering / unsustainable solo maintenance | `../NFR.md` §7 | — |
-| NFR-AUDIT-001..003 | §4 Provenance provable; §7 Risk: AI agent scope creep | `../NFR.md` §8 | — |
-| NFR-SCALE-001..003 | §1 Vision: laptop → cloud without rewrite | `../NFR.md` §9 | — |
-| NFR-COST-001..003 | §7 Risk: cloud cost growth outpacing value | `../NFR.md` §10 | — |
+| NFR-AVAIL-001..003 | §6 KPI: job success rate ≥ 99% | `NFR.md` §1 | — |
+| NFR-FRESH-001..003 | §6 KPI: freshness SLO ≥ 95% | `NFR.md` §2 | — |
+| NFR-RPO-001, NFR-RTO-001..002 | §6 KPI: recovery time < 4h | `NFR.md` §3 | — |
+| NFR-PERF-001..003 | §4 Value proposition: reproducible, fast analysis | `NFR.md` §4 | — |
+| NFR-SEC-001..005 | §7 Risk: secret leakage, license/legal exposure | `NFR.md` §5 | — |
+| NFR-GOV-001..003 | §6 KPI: 100% complete metadata | `NFR.md` §6 | — |
+| NFR-MAINT-001..003 | §7 Risk: over-engineering / unsustainable solo maintenance | `NFR.md` §7 | — |
+| NFR-AUDIT-001..003 | §4 Provenance provable; §7 Risk: AI agent scope creep | `NFR.md` §8 | — |
+| NFR-SCALE-001..003 | §1 Vision: laptop → cloud without rewrite | `NFR.md` §9 | — |
+| NFR-COST-001..003 | §7 Risk: cloud cost growth outpacing value | `NFR.md` §10 | — |
 
 ## Architecture decisions referenced by requirements
 

@@ -139,7 +139,7 @@ Every ingestion, transformation, and validation run must be visible in the opera
 
 ### FR-OPS-002: Alerting
 
-A freshness SLO breach, a repeated ingestion failure (≥ 2 consecutive failures for the same connector), or a data-quality blocking-test failure must trigger an alert to the operator within the latency defined in `../NFR.md`.
+A freshness SLO breach, a repeated ingestion failure (≥ 2 consecutive failures for the same connector), or a data-quality blocking-test failure must trigger an alert to the operator within the latency defined in `NFR.md`.
 
 ### FR-OPS-003: Safe replay
 

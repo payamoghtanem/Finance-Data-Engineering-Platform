@@ -1,0 +1,30 @@
+name: Bug / data defect
+description: Something behaves differently from its specification
+title: "[BUG] "
+labels: ["bug"]
+body:
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind
+      options: ["Code defect", "Data quality defect", "Documentation drift", "Pipeline/operational"]
+    validations: {required: true}
+  - type: textarea
+    id: expected
+    attributes:
+      label: Specified behaviour
+      description: Quote the FR/NFR or design doc this contradicts.
+    validations: {required: true}
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+    validations: {required: true}
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+  - type: input
+    id: run_id
+    attributes:
+      label: Affected run_id / dataset (if data defect)

@@ -71,7 +71,15 @@ Plus: root `CLAUDE.md`, `docs/CLAUDE.md`, and one `CLAUDE.md` per subfolder in t
 
 ## Status
 
-Tracked live via the session's task list. See the PR description (once opened) for the current state of this checklist; this file is updated if scope changes materially, not for routine progress ticks.
+> **Superseded.** This plan covered the Phase-0 documentation effort, which is
+> **complete**. It is kept as the historical record of that scope and sequencing.
+>
+> **Live project state now lives in [`STATUS.md`](STATUS.md)** — what is done, what is
+> in progress, what to do next, and which decisions are blocking.
+>
+> The earlier version of this section delegated status to "the session's task list."
+> That was a defect: session task lists are ephemeral, so project state did not survive
+> the session that created it. `STATUS.md` exists to fix exactly that.
 
 ## Verification
 

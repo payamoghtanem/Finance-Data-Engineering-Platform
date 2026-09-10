@@ -17,3 +17,11 @@ The "why" and "what" layer, before any technology is chosen. Two documents:
 
 - Changing scope here (adding/removing an out-of-scope item, adding a KPI) is a BRD-level decision — it should be deliberate, not a side effect of a technical change. If a technical constraint forces a scope change, document that link explicitly (cross-reference the ADR that caused it).
 - Personas and journeys in `PRD.md` must stay consistent with the stakeholders listed in `BRD.md` — don't introduce a new persona in one file without the other.
+
+## Current status
+
+- **This folder:** Stable — BRD and PRD complete.
+- Changing scope here is a business decision. Revisit only if the product goal itself changes.
+
+**Live project state is in `/STATUS.md`, not here** — it records what is done, in
+progress, and next. Do not duplicate that state into this file; it will drift.
