@@ -15,16 +15,26 @@ from __future__ import annotations
 
 from dagster import Definitions
 
+from pipelines.dagster_project.asset_checks import (
+    fred_cpi_consecutive_failures_check,
+    fred_cpi_freshness_check,
+)
 from pipelines.dagster_project.assets import fred_cpi_bronze, fred_cpi_raw, silver_gold_conformance
-from pipelines.dagster_project.resources import BronzeResource, FREDIngestionResource
+from pipelines.dagster_project.resources import (
+    BronzeResource,
+    FREDIngestionResource,
+    IngestionRunHistoryResource,
+)
 from pipelines.dagster_project.schedules import fred_cpi_daily_schedule, fred_cpi_ingestion_job
 
 defs = Definitions(
     assets=[fred_cpi_raw, fred_cpi_bronze, silver_gold_conformance],
+    asset_checks=[fred_cpi_consecutive_failures_check, fred_cpi_freshness_check],
     jobs=[fred_cpi_ingestion_job],
     schedules=[fred_cpi_daily_schedule],
     resources={
         "fred_ingestion": FREDIngestionResource(),
         "bronze": BronzeResource(),
+        "ingestion_run_history": IngestionRunHistoryResource(),
     },
 )
