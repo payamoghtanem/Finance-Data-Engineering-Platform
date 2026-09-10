@@ -23,6 +23,7 @@ from collections.abc import Callable
 from src.events.models import EventEnvelope, EventType
 
 Handler = Callable[[EventEnvelope], None]
+DeadLetterHandler = Callable[[EventEnvelope, Exception], None]
 
 _logger = logging.getLogger(__name__)
 
@@ -37,33 +38,56 @@ class EventBus:
     def __init__(self) -> None:
         self._subscribers: defaultdict[EventType, list[Handler]] = defaultdict(list)
         self._published: list[EventEnvelope] = []
+        self._dead_letter_handler: DeadLetterHandler | None = None
 
     def subscribe(self, event_type: EventType, handler: Handler) -> None:
         """Register `handler` to be called whenever `event_type` is published."""
         self._subscribers[event_type].append(handler)
+
+    def set_dead_letter_handler(self, handler: DeadLetterHandler) -> None:
+        """Register where a raised subscriber exception is routed (EPIC-09,
+        FR-OPS-003), per docs/technical/event-schema.md §3: "Any event whose
+        handler raises an unrecoverable error ... is routed to a DLQ rather
+        than dropped." The exception is still logged either way; this adds
+        somewhere durable for it to land instead of only the log line. See
+        `src/events/dlq.py::attach_dlq` for the real wiring to `DLQRecorder`.
+        """
+        self._dead_letter_handler = handler
 
     def publish(self, event: EventEnvelope) -> None:
         """Publish `event` and synchronously invoke every matching subscriber.
 
         One handler raising does not stop the others, and never propagates to
         the publisher — a bug in an unrelated downstream consumer must not be
-        able to break the producer that published the event.
+        able to break the producer that published the event. If a dead-letter
+        handler is registered, it is invoked too (and is itself isolated the
+        same way: a broken dead-letter handler cannot break the publisher or
+        the other subscribers either).
         """
         self._published.append(event)
         for handler in self._subscribers.get(event.event_type, []):
             try:
                 handler(event)
-            except Exception:
+            except Exception as exc:
                 _logger.exception(
                     "Subscriber to %s raised while handling event %s",
                     event.event_type.value,
                     event.event_id,
                 )
+                if self._dead_letter_handler is not None:
+                    try:
+                        self._dead_letter_handler(event, exc)
+                    except Exception:
+                        _logger.exception(
+                            "Dead-letter handler itself raised for event %s", event.event_id
+                        )
 
     def history(self, event_type: EventType | None = None) -> list[EventEnvelope]:
-        """Every event published so far, oldest first. Phase 1 has no
-        persistence or replay beyond this in-memory list — see DEBT note in
-        STATUS.md; EPIC-09 (DLQ) and EPIC-15 (Kafka) are where that lands."""
+        """Every event published so far, oldest first. This in-memory list is
+        not the DLQ (EPIC-09, `src/common/dlq.py`) — it is every event ever
+        published, success or failure alike, and (like `EventBus` itself) is
+        lost when the process ends; the DLQ is the durable, failure-only
+        record with its own replay path."""
         if event_type is None:
             return list(self._published)
         return [e for e in self._published if e.event_type == event_type]

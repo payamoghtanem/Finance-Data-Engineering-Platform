@@ -81,6 +81,57 @@ class TestSubscriberIsolation:
         bus.publish(_event())  # must not raise
 
 
+class TestDeadLetterHandler:
+    def test_a_raising_subscriber_invokes_the_dead_letter_handler(self) -> None:
+        bus = EventBus()
+        dead_lettered: list[tuple[EventEnvelope, Exception]] = []
+        bus.set_dead_letter_handler(lambda event, exc: dead_lettered.append((event, exc)))
+
+        def _broken(_e: EventEnvelope) -> None:
+            raise RuntimeError("boom")
+
+        bus.subscribe(EventType.RAW_DATA_RECEIVED, _broken)
+        event = _event()
+        bus.publish(event)
+
+        assert len(dead_lettered) == 1
+        dead_event, dead_exc = dead_lettered[0]
+        assert dead_event == event
+        assert isinstance(dead_exc, RuntimeError)
+
+    def test_no_dead_letter_handler_registered_does_not_raise(self) -> None:
+        bus = EventBus()
+
+        def _broken(_e: EventEnvelope) -> None:
+            raise RuntimeError("boom")
+
+        bus.subscribe(EventType.RAW_DATA_RECEIVED, _broken)
+        bus.publish(_event())  # must not raise -- no handler is registered
+
+    def test_a_raising_dead_letter_handler_does_not_propagate_to_the_publisher(self) -> None:
+        bus = EventBus()
+
+        def _broken_handler(_e: EventEnvelope) -> None:
+            raise RuntimeError("boom")
+
+        def _broken_dead_letter(_e: EventEnvelope, _exc: Exception) -> None:
+            raise RuntimeError("dead letter handler is broken too")
+
+        bus.subscribe(EventType.RAW_DATA_RECEIVED, _broken_handler)
+        bus.set_dead_letter_handler(_broken_dead_letter)
+        bus.publish(_event())  # must not raise despite both handlers failing
+
+    def test_a_successful_subscriber_never_invokes_the_dead_letter_handler(self) -> None:
+        bus = EventBus()
+        dead_lettered: list[EventEnvelope] = []
+        bus.set_dead_letter_handler(lambda event, _exc: dead_lettered.append(event))
+        bus.subscribe(EventType.RAW_DATA_RECEIVED, lambda _e: None)
+
+        bus.publish(_event())
+
+        assert dead_lettered == []
+
+
 class TestHistory:
     def test_history_returns_every_published_event_oldest_first(self) -> None:
         bus = EventBus()

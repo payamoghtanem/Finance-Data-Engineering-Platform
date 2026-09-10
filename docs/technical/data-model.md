@@ -142,6 +142,22 @@ This table's six time fields (`observed_at`'s role is split into `period_start`/
 | `failed_rows` | integer | |
 | `evaluated_at` | timestamp | |
 
+### `dlq`
+
+| Column | Type | Notes |
+|---|---|---|
+| `event_id` | string (PK) | The original event's `event_id` (`../technical/event-schema.md` §1) — recording is idempotent on this key |
+| `event_type` | string | Which of the nine platform event types this was |
+| `producer` | string | The original event's producer |
+| `dataset_id` | string | |
+| `correlation_id` | string, nullable | Ties back to the originating pipeline run |
+| `payload_reference` | string, nullable | Pointer to the original raw payload — never the bulk data itself |
+| `metadata` | string (JSON), nullable | The original event's `metadata`, serialized |
+| `failure_reason` | string | Why this landed here: a subscriber's raised exception, or (for `raw_data.quarantined`) the failed rule IDs |
+| `quarantined_at` | timestamp | |
+| `status` | enum(`pending`,`replayed`) | |
+| `replayed_at` | timestamp, nullable | |
+
 ## 5. Time-field discipline (see `../00-glossary.md` and FR-MODEL-002)
 
 No fact table collapses time into a single `date` column. At minimum: `observed_at` (or `period` for indicators) is kept distinct from `published_at`, `retrieved_at`, `processed_at`, and (for revisable series) `vintage_date`. This is what makes `fact_economic_observation`'s primary key include `vintage_date` rather than overwriting history on every revision.

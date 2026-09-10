@@ -346,9 +346,17 @@ services:
 
 No Kafka, no Kubernetes, no Keycloak, no Vault in this file for Phase 1 — see ADR-0002 and ADR-0004 for why, and `../roadmap/mvp-plan.md` for when each is added.
 
-## 7. Error handling and DLQ implementation
+## 7. Error handling and DLQ implementation (EPIC-09)
 
-A quarantined record (from `validation/`) is written to a `dlq` Iceberg table with columns: `event_id`, `original_payload_reference`, `failure_reason`, `quarantined_at`, `dataset_id`. A replay tool (invoked manually by the operator, or later by the agent's human-approved workflow) re-emits `raw_data.received` for a DLQ entry after the underlying issue is fixed — reprocessing is idempotent per §4 above, satisfying FR-OPS-003.
+Per `../technical/event-schema.md` §3, two distinct things land in the DLQ: any event whose subscriber handler raises an unrecoverable error, and `raw_data.quarantined` itself (a batch that failed a data-quality rule). Both are written to the `dlq` operational table (`data-model.md` §4) — **a plain DuckDB table, not an Iceberg table**: this section originally said "Iceberg table," which was never true of `dlq`'s two sibling operational tables (`ingestion_run`, `data_quality_result`, both plain DuckDB per data-model.md §4, EPIC-02/EPIC-08) and ADR-0003's Iceberg choice is explicitly scoped to Bronze/Silver/Gold tables only — corrected here rather than left to silently drift further.
+
+Implementation:
+
+- `src/events/bus.py`'s `EventBus.set_dead_letter_handler` is where a subscriber's raised exception is routed, instead of only logged as before EPIC-09.
+- `src/events/dlq.py`'s `attach_dlq(event_bus, recorder)` wires both DLQ paths (the dead-letter hook, and an explicit `raw_data.quarantined` subscription) into `src/common/dlq.py`'s `DLQRecorder`. Recording is idempotent on `event_id` (`ON CONFLICT DO NOTHING`) — two subscribers raising for the same published event does not create two DLQ rows.
+- `src/events/dlq.py`'s `replay(event_id, event_bus, recorder)` re-emits `raw_data.received` for one pending DLQ entry and marks it `replayed`. Reprocessing itself is idempotent because every downstream layer it lands on already is (content-addressed Raw Storage §2a, Bronze's lineage write §2b, Silver's `vintage_date`-keyed upsert §2d); `replay()`'s own contribution is that calling it twice on the same entry is a no-op the second time (`status` already `replayed`), not a duplicate publish — satisfying FR-OPS-003 and US-09-002.
+
+**Honest scope limit**: nothing yet calls `attach_dlq()`/`replay()` against the real Dagster pipeline (`pipelines/dagster_project/`) — EPIC-09 built and unit-tested the mechanism against `EventBus` directly, the same "mechanism proven, not yet the full flow" pattern as EPIC-06's original `EventBus` build. Wiring it into the live pipeline is follow-on work once a real consumer of `raw_data.received`/`raw_data.quarantined` exists there (see EPIC-04's note in §2c).
 
 ## 8. Relationship to other documents
 
