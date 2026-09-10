@@ -10,7 +10,7 @@ up next* from this file alone — without access to a prior chat session.
 > row here is incomplete, exactly like an FR without a traceability row.
 
 - **Last updated:** 2026-09-10
-- **Current phase:** Phase 1 — Local MVP, **in progress** (EPIC-01 done, EPIC-02 partial)
+- **Current phase:** Phase 1 — Local MVP, **in progress** (EPIC-01 done, EPIC-02 partial). Fix PR #12 open, green, awaiting owner merge. `main` now branch-protected.
 - **Active branch:** `Claude-Code-Agent`
 - **Runtime code exists:** **Yes.** `src/`, `infra/`, `tests/` exist. `pipelines/` (Dagster) does not yet.
 
@@ -45,13 +45,13 @@ up next* from this file alone — without access to a prior chat session.
 | EPIC-02 remainder: `ingestion_run` record, DLQ, full idempotency | **Not started** | — | Needs the storage/DB layer from EPIC-03 |
 | EPIC-03 — Raw & Bronze with provenance | **Next** | — | MinIO backend behind the existing `RawStorage` protocol |
 | GitHub Issues / milestones / project board seeding | **Blocked — awaiting owner approval** | human | Outward-facing; see §5 |
-| Branch protection on `main` | **Blocked — awaiting owner** | human | See D-04; without it, red CI can still be merged |
+| PR #12 (EPIC-01/02 fixes) → `main` | **Ready — awaiting owner merge** | human | 6/6 checks green, `mergeable_state: clean`. Owner merges, not the agent. |
 
 ## 4. What to do next (ordered)
 
 The next agent should start at the **top unchecked item**.
 
-1. [ ] **Owner decision:** enable branch protection on `main` requiring green CI (D-04). Until then any agent can merge a red branch — this already happened once.
+1. [ ] **Owner:** merge PR #12 into `main` (green, clean, ready).
 2. [ ] **Owner decision:** pick a `LICENSE` (D-01) — blocks any public release.
 3. [ ] **Owner decision:** approve seeding GitHub Issues + milestones + project board from `docs/backlog/epics.md` (D-02).
 4. [ ] **EPIC-03:** MinIO/S3 backend implementing the `RawStorage` protocol in `src/common/raw_storage.py`; Bronze writer with lineage back to the raw object key.
@@ -68,7 +68,7 @@ The next agent should start at the **top unchecked item**.
 | D-01 | Repository license (MIT / Apache-2.0 / proprietary) | Legal and ownership; not an agent's call | Public release, any external contribution |
 | D-02 | Seed GitHub Issues + project board? | Outward-facing, hard to reverse | Multi-agent task coordination |
 | D-03 | Confirm Python version + package manager (assumed 3.11 + pip in `pyproject.toml`) | Environment ownership | Phase 1 scaffolding |
-| D-04 | Enable branch protection on `main` requiring green CI | Repository administration | Prevents red code reaching `main`, as it did via PR #10/#11 |
+| D-04 | Enable branch protection on `main` requiring green CI | Repository administration | **Resolved 2026-09-10.** Ruleset `main-protection` active: PR required (0 approvals needed — solo dev), 6 status checks required, force-push and deletion blocked. Pitfall for future agents: pasting all 6 check names into the search box at once registers ONE concatenated context that can never pass — add each check separately, selecting it from the dropdown, and verify via `GET /repos/.../rules/branches/main` that `required_status_checks` has 6 separate entries before trusting the UI. |
 
 ## 6. Known defects / debt
 
