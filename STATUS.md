@@ -51,7 +51,7 @@ up next* from this file alone — without access to a prior chat session.
 The next agent should start at the **top unchecked item**.
 
 1. [x] ~~Owner: merge PR #12 into `main`~~ — **Merged 2026-09-10** (`9ae5e24`).
-2. [ ] **Owner decision:** pick a `LICENSE` (D-01) — blocks any public release.
+2. [x] ~~Owner decision: pick a `LICENSE`~~ — **Decided 2026-09-10: stay unlicensed for now** (see D-01). Revisit if/when external contribution or reuse is actually wanted.
 3. [x] ~~Owner decision: approve seeding GitHub Issues~~ — **Done 2026-09-10.** Phase 1 backlog seeded as Issues #13-#58 (see §8). Phase 2-3 epics (EPIC-14..EPIC-24) intentionally not seeded yet, matching `docs/backlog/user-stories.md`'s own rule against decomposing them early.
 4. [x] ~~Optional cleanup: delete superseded branches~~ — **Done.** `QWEN-Code-Agent` and `mvp-implementation-analysis-6b834` are gone (auto-deleted on merge).
 5. [ ] **EPIC-03:** MinIO/S3 backend implementing the `RawStorage` protocol in `src/common/raw_storage.py`; Bronze writer with lineage back to the raw object key.
@@ -65,7 +65,7 @@ The next agent should start at the **top unchecked item**.
 
 | # | Decision | Why it's the owner's call | Blocks |
 |---|---|---|---|
-| D-01 | Repository license (MIT / Apache-2.0 / proprietary) | Legal and ownership; not an agent's call | Public release, any external contribution |
+| D-01 | Repository license (MIT / Apache-2.0 / proprietary) | Legal and ownership; not an agent's call | **Resolved 2026-09-10 — deliberately staying unlicensed.** No `LICENSE` file exists, so default copyright applies: all rights reserved, no one (including a contributor or another agent) has legal permission to copy, modify, or reuse this code, even though the repo is public. This was a conscious choice, not an oversight — revisit if external contribution, forking, or reuse is ever wanted. |
 | D-02 | Seed GitHub Issues + project board? | Outward-facing, hard to reverse | **Resolved 2026-09-10** — Issues seeded (§8). Auto-add to Project #6 still needs a one-time owner action, see §8. |
 | D-03 | Confirm Python version + package manager (assumed 3.11 + pip in `pyproject.toml`) | Environment ownership | Phase 1 scaffolding |
 | D-04 | Enable branch protection on `main` requiring green CI | Repository administration | **Resolved 2026-09-10.** Ruleset `main-protection` active: PR required (0 approvals needed — solo dev), 6 status checks required, force-push and deletion blocked. Pitfall for future agents: pasting all 6 check names into the search box at once registers ONE concatenated context that can never pass — add each check separately, selecting it from the dropdown, and verify via `GET /repos/.../rules/branches/main` that `required_status_checks` has 6 separate entries before trusting the UI. |
