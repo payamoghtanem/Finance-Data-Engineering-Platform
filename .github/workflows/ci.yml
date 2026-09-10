@@ -13,6 +13,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
   secret-scan:
@@ -87,6 +88,8 @@ jobs:
           fail=0
           for d in src/connectors/*/; do
             [ -d "$d" ] || continue
+            # Skip caches and private/dunder dirs - they are not connectors.
+            case "$(basename "$d")" in __*|.*) continue ;; esac
             for required in contract.yaml README.md; do
               if [ ! -f "$d$required" ]; then
                 echo "::error::$d is missing $required (NFR-MAINT-001 / FR-ING-006)"

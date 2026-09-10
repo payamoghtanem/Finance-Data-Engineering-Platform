@@ -6,13 +6,12 @@ ingestion, validation, and transformation stages.
 
 import logging
 import sys
-from typing import Optional
 
 
 def setup_logging(
     name: str,
     level: str = "INFO",
-    correlation_id: Optional[str] = None,
+    correlation_id: str | None = None,
 ) -> logging.Logger:
     """Set up a logger with structured formatting.
 
@@ -36,10 +35,7 @@ def setup_logging(
 
     # Structured format with timestamp, level, logger name, and message
     formatter = logging.Formatter(
-        fmt=(
-            "%(asctime)s | %(levelname)-8s | %(name)s | "
-            "%(message)s"
-        ),
+        fmt=("%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"),
         datefmt="%Y-%m-%d %H:%M:%S UTC",
     )
 

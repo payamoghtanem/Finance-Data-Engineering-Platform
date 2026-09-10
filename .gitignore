@@ -1,43 +1,65 @@
-```
-# Dependencies
+# Secrets — never commit (NFR-SEC-003)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+credentials.json
+secrets/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
 .venv/
 venv/
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
+.python-version
 
-# Build and distribution artifacts
-dist/
-build/
-*.egg-info/
+# Testing / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Data — never commit raw or derived data
+data/
+raw_store/
+*.parquet
+*.duckdb
+*.sqlite
+*.db
 
 # Logs
+logs/
 *.log
 
-# Environment files
-.env
-.env.local
-*.env.*
+# dbt
+target/
+dbt_packages/
 
-# Editors
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# OS generated files
-.DS_Store
-Thumbs.db
-
-# Testing
-.coverage
-htmlcov/
-.coverage.*
-.cache
-.pytest_cache/
-.mypy_cache/
+# Dagster
+.dagster/
+dagster_home/
 
 # Docker
 .dockerenv
-```
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Terraform / OpenTofu
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example

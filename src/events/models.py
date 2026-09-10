@@ -1,109 +1,92 @@
-"""Types and exceptions for the events module.
+"""Event envelope and event taxonomy.
 
-Defines the event envelope structure per docs/technical/event-schema.md.
+The event types here are exactly the nine defined in
+docs/technical/event-schema.md. That document is the contract: an event type
+that does not appear there does not exist. If a new event is genuinely needed,
+update the schema document in the same change that adds it here — see the
+"Docs are the contract" rule in the root CLAUDE.md.
 """
+
+from __future__ import annotations
 
 import hashlib
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Any, Dict, Optional
+from typing import Any
+
+SCHEMA_VERSION = "1.0.0"
 
 
-class EventType(str, Enum):
-    """Event types in the platform event taxonomy."""
+class EventType(Enum):
+    """The nine platform event types, per docs/technical/event-schema.md."""
 
-    # Ingestion events
+    SCHEDULE_TRIGGERED = "schedule.triggered"
+    INGESTION_REQUESTED = "ingestion.requested"
     RAW_DATA_RECEIVED = "raw_data.received"
     RAW_DATA_VALIDATED = "raw_data.validated"
     RAW_DATA_QUARANTINED = "raw_data.quarantined"
-
-    # Transformation events
+    BRONZE_DATA_WRITTEN = "bronze_data.written"
     SILVER_DATA_TRANSFORMED = "silver_data.transformed"
     GOLD_DATA_PUBLISHED = "gold_data.published"
-
-    # Data quality events
-    DATA_QUALITY_PASSED = "data_quality.passed"
-    DATA_QUALITY_FAILED = "data_quality.failed"
-
-    # Operations events
-    INGESTION_STARTED = "ingestion.started"
-    INGESTION_COMPLETED = "ingestion.completed"
-    INGESTION_FAILED = "ingestion.failed"
-    REPLAY_REQUESTED = "replay.requested"
-    REPLAY_COMPLETED = "replay.completed"
+    DATA_PRODUCT_READY = "data_product.ready"
 
 
 @dataclass(frozen=True)
 class EventEnvelope:
-    """Standard event envelope for all platform events.
+    """Standard envelope carried by every platform event.
 
-    Per docs/technical/event-schema.md, every event must contain:
-    - event_id: Unique identifier (UUID v4)
-    - event_type: One of EventType values
-    - source: Originating service/module (e.g., "connectors.fred")
-    - dataset_id: Identifier for the dataset this event concerns
-    - timestamp: UTC timestamp when event was created
-    - correlation_id: Groups related events for traceability
-    - payload_reference: Reference to actual payload (e.g., S3 path)
-    - metadata: Additional context
+    Field names follow the envelope table in docs/technical/event-schema.md
+    (`occurred_at`, `producer`, `schema_version`), not convenient synonyms.
+
+    `event_id` is a real field with a factory default, not a computed property:
+    it is generated once at construction and never changes. An identifier that
+    varies between reads cannot support the audit trail NFR-AUDIT-001 requires.
     """
 
     event_type: EventType
-    source: str
+    producer: str
     dataset_id: str
-    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    correlation_id: Optional[str] = None
-    payload_reference: Optional[str] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    event_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    occurred_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    schema_version: str = SCHEMA_VERSION
+    correlation_id: str | None = None
+    payload_reference: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
-    def __post_init__(self) -> None:
-        """Generate event_id if not provided."""
-        # Use object.__setattr__ because dataclass is frozen
-        if not hasattr(self, "event_id"):
-            object.__setattr__(self, "event_id", str(uuid.uuid4()))
-
-    @property
-    def event_id(self) -> str:
-        """Return the event ID (generated on first access)."""
-        # This is a workaround for frozen dataclass with computed field
-        return getattr(self, "_event_id", str(uuid.uuid4()))
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert event to dictionary for serialization."""
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize the envelope, preserving the stable event_id."""
         return {
             "event_id": self.event_id,
             "event_type": self.event_type.value,
-            "source": self.source,
+            "occurred_at": self.occurred_at.isoformat(),
+            "producer": self.producer,
+            "schema_version": self.schema_version,
             "dataset_id": self.dataset_id,
-            "timestamp": self.timestamp.isoformat(),
             "correlation_id": self.correlation_id,
             "payload_reference": self.payload_reference,
             "metadata": self.metadata,
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "EventEnvelope":
-        """Reconstruct event from dictionary."""
-        return cls(
-            event_type=EventType(data["event_type"]),
-            source=data["source"],
-            dataset_id=data["dataset_id"],
-            timestamp=datetime.fromisoformat(data["timestamp"]),
-            correlation_id=data.get("correlation_id"),
-            payload_reference=data.get("payload_reference"),
-            metadata=data.get("metadata", {}),
-        )
+    def from_dict(cls, data: dict[str, Any]) -> EventEnvelope:
+        """Rebuild an envelope, keeping the original event_id if present."""
+        kwargs: dict[str, Any] = {
+            "event_type": EventType(data["event_type"]),
+            "producer": data["producer"],
+            "dataset_id": data["dataset_id"],
+            "occurred_at": datetime.fromisoformat(data["occurred_at"]),
+            "schema_version": data.get("schema_version", SCHEMA_VERSION),
+            "correlation_id": data.get("correlation_id"),
+            "payload_reference": data.get("payload_reference"),
+            "metadata": data.get("metadata", {}),
+        }
+        if "event_id" in data:
+            kwargs["event_id"] = data["event_id"]
+        return cls(**kwargs)
 
 
 def compute_payload_hash(payload: bytes) -> str:
-    """Compute SHA-256 hash of a payload for integrity verification.
-
-    Args:
-        payload: Raw bytes to hash.
-
-    Returns:
-        Hex-encoded SHA-256 hash.
-    """
+    """Compute SHA-256 of a payload for integrity verification."""
     return hashlib.sha256(payload).hexdigest()

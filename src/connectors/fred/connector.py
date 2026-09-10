@@ -1,366 +1,260 @@
-"""FRED (Federal Reserve Economic Data) connector implementation.
+"""FRED (Federal Reserve Economic Data) connector.
 
 Implements FR-ING-001 from docs/requirements/FRD.md:
-- Fetches CPI and other economic indicators from FRED API
-- Stores raw response with SHA-256 checksum
-- Implements retry with exponential backoff
-- Emits events for downstream processing
+- fetches a configured FRED series,
+- persists the *original* response bytes with a SHA-256 checksum **before**
+  anything parses them (architecture principle 2: immutable raw data),
+- retries transient failures with exponential backoff, never retries 4xx,
+- emits the documented events from docs/technical/event-schema.md.
+
+Secrets discipline (NFR-SEC-003): the FRED API key travels in the query string,
+so the full request URL is credential-bearing and is never logged. Log lines
+carry the endpoint and series id only.
 """
 
-import hashlib
+from __future__ import annotations
+
 import json
 import time
-from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any, Dict, List, Optional
+from collections.abc import Callable
+from datetime import UTC, datetime
+from typing import Any
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from src.common.config import PlatformConfig
 from src.common.logging_config import setup_logging
-from src.events.models import EventEnvelope, EventType, compute_payload_hash
+from src.common.raw_storage import (
+    LocalRawStorage,
+    RawStorage,
+    build_object_key,
+    compute_sha256,
+)
+from src.events.models import EventEnvelope, EventType
 
 
 class FREDConnectorError(Exception):
     """Base exception for FRED connector errors."""
 
-    pass
-
 
 class FREDTransientError(FREDConnectorError):
-    """Transient error that should be retried (5xx, timeout, connection reset)."""
-
-    pass
+    """Transient error worth retrying (5xx, timeout, connection reset)."""
 
 
 class FREDPermanentError(FREDConnectorError):
-    """Permanent error that should not be retried (4xx except 429)."""
-
-    pass
+    """Permanent error that must not be retried (4xx other than 429)."""
 
 
 class FREDConnector:
-    """Connector for FRED (Federal Reserve Economic Data) API.
+    """Connector for the FRED API.
 
-    Per FR-ING-001, this connector:
-    - Fetches configured FRED series (e.g., CPIAUCSL for CPI)
-    - Stores raw API response in Raw Object Storage with SHA-256 checksum
-    - Implements retry up to 3 times with exponential backoff
-    - Emits raw_data.received event on success
-    - Records ingestion_run metadata for audit trail
+    Args:
+        api_key: FRED API key.
+        raw_storage: Where original payloads are persisted. Injected so the
+            MinIO backend can replace the local one in EPIC-03 without touching
+            this class, and so tests need no filesystem assumptions.
+        log_level: Logging level.
+        sleep: Injected sleep, so retry tests do not actually wait.
     """
 
     BASE_URL = "https://api.stlouisfed.org/fred"
+    USER_AGENT = "FinanceDataPlatform/0.1"
+    MAX_RETRIES = 3
+    BASE_DELAY_SECONDS = 2
+    REQUEST_TIMEOUT_SECONDS = 30
 
     def __init__(
         self,
         api_key: str,
-        minio_endpoint: str,
-        minio_access_key: str,
-        minio_secret_key: str,
-        raw_bucket: str = "raw",
+        raw_storage: RawStorage | None = None,
         log_level: str = "INFO",
-    ):
-        """Initialize FRED connector.
-
-        Args:
-            api_key: FRED API key (required per FRED documentation).
-            minio_endpoint: MinIO/S3 endpoint URL.
-            minio_access_key: MinIO access key.
-            minio_secret_key: MinIO secret key.
-            raw_bucket: Bucket name for raw storage.
-            log_level: Logging level.
-        """
+        sleep: Callable[[float], None] = time.sleep,
+    ) -> None:
         self.api_key = api_key
-        self.minio_endpoint = minio_endpoint
-        self.minio_access_key = minio_access_key
-        self.minio_secret_key = minio_secret_key
-        self.raw_bucket = raw_bucket
-        self.log_level = log_level
+        self.raw_storage: RawStorage = raw_storage or LocalRawStorage("raw_store")
         self.logger = setup_logging(__name__, level=log_level)
+        self._sleep = sleep
 
-        # Retry configuration per FR-ING-001 and TDD §3
-        self.max_retries = 3
-        self.base_delay_seconds = 2
-
-    def fetch_series(
-        self,
-        series_id: str,
-        realtime_start: Optional[str] = None,
-        realtime_end: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """Fetch a FRED series with retry logic.
-
-        Args:
-            series_id: FRED series ID (e.g., 'CPIAUCSL' for CPI).
-            realtime_start: Realtime start date (YYYY-MM-DD).
-            realtime_end: Realtime end date (YYYY-MM-DD).
-
-        Returns:
-            Parsed JSON response from FRED API.
-
-        Raises:
-            FREDTransientError: On transient errors (will retry).
-            FREDPermanentError: On permanent errors (won't retry).
-        """
-        url = f"{self.BASE_URL}/series/observations"
+    def _build_url(self, series_id: str, **extra: str) -> str:
+        """Build the request URL. The result contains the API key: never log it."""
         params = {
             "series_id": series_id,
             "api_key": self.api_key,
             "file_type": "json",
+            **extra,
         }
+        return f"{self.BASE_URL}/series/observations?{urlencode(params)}"
 
+    def fetch_series_raw(
+        self,
+        series_id: str,
+        realtime_start: str | None = None,
+        realtime_end: str | None = None,
+    ) -> bytes:
+        """Fetch a FRED series and return the response bytes exactly as received.
+
+        Returning bytes rather than parsed JSON is deliberate: the caller must be
+        able to persist the untouched payload, and the checksum must be taken
+        over what the source actually sent (NFR-AUDIT-001).
+        """
+        extra: dict[str, str] = {}
         if realtime_start:
-            params["realtime_start"] = realtime_start
+            extra["realtime_start"] = realtime_start
         if realtime_end:
-            params["realtime_end"] = realtime_end
+            extra["realtime_end"] = realtime_end
 
-        query_string = "&".join(f"{k}={v}" for k, v in params.items())
-        full_url = f"{url}?{query_string}"
+        url = self._build_url(series_id, **extra)
 
-        self.logger.info("Fetching series %s from %s", series_id, full_url)
+        # Endpoint + series only. `url` carries the API key.
+        self.logger.info("Fetching series %s from %s/series/observations", series_id, self.BASE_URL)
 
-        last_error: Optional[Exception] = None
+        last_error: Exception | None = None
 
-        for attempt in range(self.max_retries + 1):
+        for attempt in range(self.MAX_RETRIES + 1):
             try:
-                request = Request(full_url)
-                request.add_header("User-Agent", "FinanceDataPlatform/0.1")
+                request = Request(url)  # noqa: S310 - fixed https FRED endpoint
+                request.add_header("User-Agent", self.USER_AGENT)
+                with urlopen(request, timeout=self.REQUEST_TIMEOUT_SECONDS) as response:  # noqa: S310
+                    return bytes(response.read())
 
-                with urlopen(request, timeout=30) as response:
-                    raw_bytes = response.read()
-                    return json.loads(raw_bytes.decode("utf-8"))
-
-            except HTTPError as e:
-                if e.code == 429:
-                    # Rate limited - respect Retry-After if present
-                    retry_after = e.headers.get("Retry-After")
-                    if retry_after:
-                        delay = int(retry_after)
-                    else:
-                        delay = self.base_delay_seconds * (2**attempt)
-
+            except HTTPError as exc:
+                if exc.code == 429:
+                    retry_after = exc.headers.get("Retry-After") if exc.headers else None
+                    delay = (
+                        int(retry_after)
+                        if retry_after and retry_after.isdigit()
+                        else self.BASE_DELAY_SECONDS * (2**attempt)
+                    )
+                    last_error = FREDTransientError(f"Rate limited (429) on {series_id}")
                     self.logger.warning(
                         "Rate limited (429), waiting %ds before retry %d/%d",
                         delay,
                         attempt + 1,
-                        self.max_retries,
+                        self.MAX_RETRIES,
                     )
-                    time.sleep(delay)
-                    continue
-
-                elif 500 <= e.code < 600:
-                    # Server error - transient, will retry
-                    last_error = FREDTransientError(f"Server error {e.code}: {e.reason}")
-                    delay = self.base_delay_seconds * (2**attempt)
+                elif 500 <= exc.code < 600:
+                    last_error = FREDTransientError(f"Server error {exc.code}: {exc.reason}")
+                    delay = self.BASE_DELAY_SECONDS * (2**attempt)
                     self.logger.warning(
                         "Transient error %s, retrying in %ds (attempt %d/%d)",
                         last_error,
                         delay,
                         attempt + 1,
-                        self.max_retries,
+                        self.MAX_RETRIES,
                     )
-                    time.sleep(delay)
-
                 else:
-                    # Client error (4xx except 429) - permanent, don't retry
-                    raise FREDPermanentError(f"Client error {e.code}: {e.reason}") from e
+                    # 4xx: permanent. Retrying a bad request just burns rate limit.
+                    raise FREDPermanentError(f"Client error {exc.code}: {exc.reason}") from exc
 
-            except (URLError, TimeoutError, ConnectionResetError) as e:
-                # Network-level transient errors
-                last_error = FREDTransientError(f"Network error: {e}")
-                delay = self.base_delay_seconds * (2**attempt)
+            except (TimeoutError, ConnectionResetError, URLError) as exc:
+                last_error = FREDTransientError(f"Network error: {exc}")
+                delay = self.BASE_DELAY_SECONDS * (2**attempt)
                 self.logger.warning(
                     "Network error %s, retrying in %ds (attempt %d/%d)",
                     last_error,
                     delay,
                     attempt + 1,
-                    self.max_retries,
+                    self.MAX_RETRIES,
                 )
-                time.sleep(delay)
 
-        # Exhausted all retries
+            if attempt < self.MAX_RETRIES:
+                self._sleep(delay)
+
         raise FREDConnectorError(
-            f"Failed after {self.max_retries} retries"
+            f"Failed to fetch {series_id} after {self.MAX_RETRIES} retries"
         ) from last_error
 
-    def store_raw_response(
+    def store_raw(
         self,
         series_id: str,
-        response: Dict[str, Any],
-        retrieved_at: Optional[datetime] = None,
+        payload: bytes,
+        retrieved_at: datetime | None = None,
     ) -> tuple[str, str]:
-        """Store raw API response in object storage.
+        """Persist the original payload and return (object_key, sha256).
 
-        Per FR-ING-001, stores raw response with SHA-256 checksum before parsing.
-
-        Args:
-            series_id: FRED series ID.
-            response: Parsed JSON response.
-            retrieved_at: Timestamp of retrieval (defaults to now).
-
-        Returns:
-            Tuple of (object_path, sha256_hash).
+        The checksum is taken over the exact bytes received, and the key is
+        content-addressed, so storing the same payload twice is a no-op
+        (the raw half of FR-ING-001's idempotency requirement).
         """
         if retrieved_at is None:
-            retrieved_at = datetime.now(timezone.utc)
+            retrieved_at = datetime.now(UTC)
 
-        # Serialize to JSON bytes
-        raw_bytes = json.dumps(response, indent=2).encode("utf-8")
-        sha256_hash = compute_payload_hash(raw_bytes)
+        sha256 = compute_sha256(payload)
+        key = build_object_key("fred", series_id, retrieved_at, sha256)
+        self.raw_storage.put(key, payload)
 
-        # Build object path: raw/fred/<series_id>/date=<retrieval_date>/<hash>.json
-        date_part = retrieved_at.strftime("%Y-%m-%d")
-        object_path = f"raw/fred/{series_id}/date={date_part}/{sha256_hash}.json"
-
-        self.logger.info("Storing raw response at %s", object_path)
-
-        # TODO: Implement actual MinIO/S3 upload when storage module is ready
-        # For now, we can write to local filesystem as a placeholder
-        # This satisfies the design requirement; actual S3 upload comes in EPIC-03
-
-        self.logger.info(
-            "Raw response stored: path=%s, sha256=%s, size=%d bytes",
-            object_path,
-            sha256_hash,
-            len(raw_bytes),
-        )
-
-        return object_path, sha256_hash
-
-    def emit_received_event(
-        self,
-        series_id: str,
-        payload_reference: str,
-        sha256_hash: str,
-        correlation_id: Optional[str] = None,
-    ) -> EventEnvelope:
-        """Emit raw_data.received event.
-
-        Args:
-            series_id: FRED series ID.
-            payload_reference: Path to stored raw response.
-            sha256_hash: SHA-256 hash of raw payload.
-            correlation_id: Correlation ID for traceability.
-
-        Returns:
-            EventEnvelope for the raw_data.received event.
-        """
-        event = EventEnvelope(
-            event_type=EventType.RAW_DATA_RECEIVED,
-            source="connectors.fred",
-            dataset_id=f"fred_{series_id.lower()}",
-            correlation_id=correlation_id,
-            payload_reference=payload_reference,
-            metadata={"sha256": sha256_hash, "series_id": series_id},
-        )
-
-        self.logger.info(
-            "Emitted event %s for dataset %s", event.event_id, event.dataset_id
-        )
-
-        return event
+        self.logger.info("Raw payload stored: key=%s sha256=%s bytes=%d", key, sha256, len(payload))
+        return key, sha256
 
     def run_ingestion(
         self,
         series_id: str,
-        correlation_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """Run complete ingestion flow for a FRED series.
+        correlation_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Run the full ingestion flow for one FRED series.
 
-        This is the main entry point called by Dagster orchestration.
-
-        Args:
-            series_id: FRED series ID to ingest.
-            correlation_id: Optional correlation ID for traceability.
-
-        Returns:
-            Ingestion result with status, paths, and event info.
-
-        Raises:
-            FREDConnectorError: If ingestion fails.
+        Order matters and is enforced here: fetch bytes -> persist raw -> only
+        then parse. Parsing before persisting would make the stored artifact a
+        re-serialization rather than the source's own response.
         """
         if correlation_id is None:
-            correlation_id = f"fred_{series_id}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
+            correlation_id = f"fred_{series_id}_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}"
 
+        dataset_id = f"fred_{series_id.lower()}"
         self.logger.info(
-            "Starting ingestion for series %s (correlation_id=%s)",
-            series_id,
-            correlation_id,
+            "Starting ingestion series=%s correlation_id=%s", series_id, correlation_id
         )
 
-        # Emit ingestion started event
-        start_event = EventEnvelope(
-            event_type=EventType.INGESTION_STARTED,
-            source="connectors.fred",
-            dataset_id=f"fred_{series_id.lower()}",
+        requested = EventEnvelope(
+            event_type=EventType.INGESTION_REQUESTED,
+            producer="connectors.fred",
+            dataset_id=dataset_id,
             correlation_id=correlation_id,
         )
-        self.logger.info("Emitted ingestion started event: %s", start_event.event_id)
+        self.logger.info("Event %s: %s", requested.event_type.value, requested.event_id)
 
-        # Fetch data with retry
-        response = self.fetch_series(series_id)
+        raw_payload = self.fetch_series_raw(series_id)
 
-        # Store raw response
-        retrieved_at = datetime.now(timezone.utc)
-        object_path, sha256_hash = self.store_raw_response(
-            series_id, response, retrieved_at
-        )
+        retrieved_at = datetime.now(UTC)
+        object_key, sha256 = self.store_raw(series_id, raw_payload, retrieved_at)
 
-        # Emit raw_data.received event
-        received_event = self.emit_received_event(
-            series_id, object_path, sha256_hash, correlation_id
-        )
-
-        # Emit ingestion completed event
-        completion_event = EventEnvelope(
-            event_type=EventType.INGESTION_COMPLETED,
-            source="connectors.fred",
-            dataset_id=f"fred_{series_id.lower()}",
+        received = EventEnvelope(
+            event_type=EventType.RAW_DATA_RECEIVED,
+            producer="connectors.fred",
+            dataset_id=dataset_id,
             correlation_id=correlation_id,
-            metadata={
-                "object_path": object_path,
-                "sha256": sha256_hash,
-                "retrieved_at": retrieved_at.isoformat(),
-            },
+            payload_reference=object_key,
+            metadata={"sha256": sha256, "series_id": series_id},
         )
+        self.logger.info("Event %s: %s", received.event_type.value, received.event_id)
 
-        result = {
+        # Parsed only after the original bytes are safely persisted.
+        parsed: dict[str, Any] = json.loads(raw_payload.decode("utf-8"))
+        observation_count = len(parsed.get("observations", []))
+
+        return {
             "status": "success",
             "series_id": series_id,
+            "dataset_id": dataset_id,
             "correlation_id": correlation_id,
             "retrieved_at": retrieved_at.isoformat(),
-            "object_path": object_path,
-            "sha256_hash": sha256_hash,
-            "received_event_id": received_event.event_id,
-            "completion_event_id": completion_event.event_id,
+            "object_key": object_key,
+            "sha256": sha256,
+            "observation_count": observation_count,
+            "requested_event_id": requested.event_id,
+            "received_event_id": received.event_id,
         }
 
-        self.logger.info("Ingestion completed successfully: %s", result)
-
-        return result
-
     @classmethod
-    def from_config(cls, config: PlatformConfig) -> "FREDConnector":
-        """Create connector from platform configuration.
-
-        Args:
-            config: Platform configuration with FRED API key.
-
-        Returns:
-            Configured FREDConnector instance.
-
-        Raises:
-            ValueError: If FRED API key is missing.
-        """
+    def from_config(
+        cls, config: PlatformConfig, raw_storage: RawStorage | None = None
+    ) -> FREDConnector:
+        """Build a connector from platform configuration."""
         if not config.fred_api_key:
             raise ValueError("FRED_API_KEY is required but not set")
-
         return cls(
             api_key=config.fred_api_key,
-            minio_endpoint=config.minio.endpoint,
-            minio_access_key=config.minio.access_key,
-            minio_secret_key=config.minio.secret_key,
-            raw_bucket=config.minio.raw_bucket,
+            raw_storage=raw_storage,
             log_level=config.log_level,
         )

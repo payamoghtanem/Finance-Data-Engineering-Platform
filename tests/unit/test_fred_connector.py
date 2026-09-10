@@ -1,194 +1,199 @@
-"""Unit tests for FRED connector.
+"""Unit tests for the FRED connector (FR-ING-001).
 
-Tests FR-ING-001 implementation without requiring network access or API keys.
+No network access and no API key: every external call is faked, per
+docs/engineering/test-strategy.md §2.
 """
 
-import json
-import pytest
-from datetime import datetime, timezone
-from unittest.mock import patch, MagicMock
+from __future__ import annotations
 
+import json
+from datetime import UTC, datetime
+from unittest.mock import MagicMock, patch
+from urllib.error import HTTPError
+
+import pytest
+from src.common.config import DatabaseConfig, MinIOConfig, PlatformConfig
+from src.common.raw_storage import LocalRawStorage, compute_sha256
 from src.connectors.fred.connector import (
     FREDConnector,
     FREDConnectorError,
-    FREDTransientError,
     FREDPermanentError,
 )
 from src.events.models import EventType
 
+SAMPLE_PAYLOAD = json.dumps({"observations": [{"date": "2024-01-01", "value": "308.417"}]}).encode(
+    "utf-8"
+)
 
-class TestFREDConnectorRetry:
-    """Test retry behavior per FR-ING-001 and TDD §3."""
 
-    def setup_method(self):
-        """Set up test fixtures."""
-        self.connector = FREDConnector(
-            api_key="test_api_key",
-            minio_endpoint="http://localhost:9000",
-            minio_access_key="test_access",
-            minio_secret_key="test_secret",
-            log_level="DEBUG",
-        )
-        # Reduce delays for faster testing
-        self.connector.base_delay_seconds = 0.01
+def _response(payload: bytes = SAMPLE_PAYLOAD) -> MagicMock:
+    """Build a urlopen context manager returning `payload`."""
+    body = MagicMock()
+    body.read.return_value = payload
+    ctx = MagicMock()
+    ctx.__enter__.return_value = body
+    return ctx
 
-    @patch('src.connectors.fred.connector.urlopen')
-    def test_success_on_first_attempt(self, mock_urlopen):
-        """Test successful fetch on first attempt."""
-        mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps({
-            "observations": [
-                {"date": "2024-01-01", "value": "308.417"}
-            ]
-        }).encode('utf-8')
-        mock_urlopen.return_value.__enter__.return_value = mock_response
 
-        result = self.connector.fetch_series("CPIAUCSL")
+def _connector(tmp_path, **kwargs) -> FREDConnector:
+    return FREDConnector(
+        api_key="test_api_key",
+        raw_storage=LocalRawStorage(tmp_path),
+        sleep=lambda _: None,  # never actually wait in tests
+        **kwargs,
+    )
 
-        assert "observations" in result
-        assert len(result["observations"]) == 1
-        assert result["observations"][0]["value"] == "308.417"
-        mock_urlopen.assert_called_once()
 
-    @patch('src.connectors.fred.connector.urlopen')
-    def test_retry_on_5xx_error(self, mock_urlopen):
-        """Test retry on transient 5xx server error."""
-        from urllib.error import HTTPError
+class TestRetryBehaviour:
+    """FR-ING-001: retry transient failures, never retry 4xx."""
 
-        # Create a mock context manager that succeeds on third call
-        mock_context = MagicMock()
-        mock_context.read.return_value = json.dumps({"observations": []}).encode('utf-8')
-        
-        # Fail twice with 503, succeed on third attempt
+    @patch("src.connectors.fred.connector.urlopen")
+    def test_success_on_first_attempt(self, mock_urlopen, tmp_path):
+        mock_urlopen.return_value = _response()
+        payload = _connector(tmp_path).fetch_series_raw("CPIAUCSL")
+        assert payload == SAMPLE_PAYLOAD
+        assert mock_urlopen.call_count == 1
+
+    @patch("src.connectors.fred.connector.urlopen")
+    def test_retries_then_succeeds_on_5xx(self, mock_urlopen, tmp_path):
         mock_urlopen.side_effect = [
             HTTPError("url", 503, "Service Unavailable", {}, None),
             HTTPError("url", 503, "Service Unavailable", {}, None),
-            MagicMock(**{
-                "__enter__.return_value": mock_context
-            })
+            _response(),
         ]
-
-        result = self.connector.fetch_series("CPIAUCSL")
-
-        # Should have been called 3 times (initial + 2 retries)
+        payload = _connector(tmp_path).fetch_series_raw("CPIAUCSL")
+        assert payload == SAMPLE_PAYLOAD
         assert mock_urlopen.call_count == 3
-        assert "observations" in result
 
-    @patch('src.connectors.fred.connector.urlopen')
-    def test_no_retry_on_4xx_error(self, mock_urlopen):
-        """Test no retry on permanent 4xx client error."""
-        from urllib.error import HTTPError
+    @patch("src.connectors.fred.connector.urlopen")
+    def test_gives_up_after_three_retries(self, mock_urlopen, tmp_path):
+        mock_urlopen.side_effect = HTTPError("url", 500, "Server Error", {}, None)
+        with pytest.raises(FREDConnectorError):
+            _connector(tmp_path).fetch_series_raw("CPIAUCSL")
+        # 1 initial attempt + 3 retries
+        assert mock_urlopen.call_count == 4
 
-        mock_urlopen.side_effect = HTTPError(
-            "url", 403, "Forbidden", {}, None
-        )
-
-        with pytest.raises(FREDPermanentError) as exc_info:
-            self.connector.fetch_series("CPIAUCSL")
-
-        assert "403" in str(exc_info.value)
-        # Should only be called once (no retries)
+    @patch("src.connectors.fred.connector.urlopen")
+    def test_no_retry_on_4xx(self, mock_urlopen, tmp_path):
+        mock_urlopen.side_effect = HTTPError("url", 403, "Forbidden", {}, None)
+        with pytest.raises(FREDPermanentError, match="403"):
+            _connector(tmp_path).fetch_series_raw("CPIAUCSL")
         assert mock_urlopen.call_count == 1
 
+    @patch("src.connectors.fred.connector.urlopen")
+    def test_429_is_retried_not_treated_as_permanent(self, mock_urlopen, tmp_path):
+        mock_urlopen.side_effect = [
+            HTTPError("url", 429, "Too Many Requests", {}, None),
+            _response(),
+        ]
+        payload = _connector(tmp_path).fetch_series_raw("CPIAUCSL")
+        assert payload == SAMPLE_PAYLOAD
+        assert mock_urlopen.call_count == 2
 
-class TestFREDConnectorEventEmission:
-    """Test event emission per event-schema.md."""
 
-    def setup_method(self):
-        """Set up test fixtures."""
-        self.connector = FREDConnector(
-            api_key="test_api_key",
-            minio_endpoint="http://localhost:9000",
-            minio_access_key="test_access",
-            minio_secret_key="test_secret",
+class TestSecretHandling:
+    """NFR-SEC-003: the API key must never reach a log line."""
+
+    @patch("src.connectors.fred.connector.urlopen")
+    def test_api_key_never_logged(self, mock_urlopen, tmp_path, caplog):
+        mock_urlopen.return_value = _response()
+        connector = _connector(tmp_path)
+        with caplog.at_level("DEBUG"):
+            connector.logger.propagate = True
+            connector.fetch_series_raw("CPIAUCSL")
+        assert "test_api_key" not in caplog.text
+        assert "api_key" not in caplog.text
+
+    def test_url_still_carries_the_key(self, tmp_path):
+        # Guards the test above from passing trivially: the key really is in
+        # the request URL, so keeping it out of the logs is a real constraint.
+        url = _connector(tmp_path)._build_url("CPIAUCSL")
+        assert "api_key=test_api_key" in url
+
+
+class TestRawStorage:
+    """FR-ING-001 / ARD principle 2: original bytes, stored before parsing."""
+
+    @patch("src.connectors.fred.connector.urlopen")
+    def test_stored_bytes_are_byte_identical_to_response(self, mock_urlopen, tmp_path):
+        mock_urlopen.return_value = _response()
+        storage = LocalRawStorage(tmp_path)
+        connector = FREDConnector(api_key="k", raw_storage=storage, sleep=lambda _: None)
+        result = connector.run_ingestion("CPIAUCSL")
+        assert storage.get(result["object_key"]) == SAMPLE_PAYLOAD
+
+    @patch("src.connectors.fred.connector.urlopen")
+    def test_checksum_matches_original_payload(self, mock_urlopen, tmp_path):
+        mock_urlopen.return_value = _response()
+        result = _connector(tmp_path).run_ingestion("CPIAUCSL")
+        assert result["sha256"] == compute_sha256(SAMPLE_PAYLOAD)
+
+    def test_store_raw_actually_persists(self, tmp_path):
+        storage = LocalRawStorage(tmp_path)
+        connector = FREDConnector(api_key="k", raw_storage=storage)
+        key, _ = connector.store_raw("CPIAUCSL", SAMPLE_PAYLOAD)
+        assert storage.exists(key)
+
+    def test_storing_same_payload_twice_is_idempotent(self, tmp_path):
+        storage = LocalRawStorage(tmp_path)
+        connector = FREDConnector(api_key="k", raw_storage=storage)
+        at = datetime(2026, 9, 10, tzinfo=UTC)
+        key1, hash1 = connector.store_raw("CPIAUCSL", SAMPLE_PAYLOAD, at)
+        key2, hash2 = connector.store_raw("CPIAUCSL", SAMPLE_PAYLOAD, at)
+        assert (key1, hash1) == (key2, hash2)
+        assert sum(1 for _ in tmp_path.rglob("*.json")) == 1
+
+
+class TestEventEmission:
+    """Events must be the documented ones, with stable identifiers."""
+
+    @patch("src.connectors.fred.connector.urlopen")
+    def test_emits_documented_event_types(self, mock_urlopen, tmp_path):
+        mock_urlopen.return_value = _response()
+        result = _connector(tmp_path).run_ingestion("CPIAUCSL")
+        assert result["requested_event_id"] != result["received_event_id"]
+        assert EventType.INGESTION_REQUESTED.value == "ingestion.requested"
+        assert EventType.RAW_DATA_RECEIVED.value == "raw_data.received"
+
+    def test_event_taxonomy_matches_documented_schema(self):
+        # Exactly the nine events in docs/technical/event-schema.md.
+        assert {e.value for e in EventType} == {
+            "schedule.triggered",
+            "ingestion.requested",
+            "raw_data.received",
+            "raw_data.validated",
+            "raw_data.quarantined",
+            "bronze_data.written",
+            "silver_data.transformed",
+            "gold_data.published",
+            "data_product.ready",
+        }
+
+
+class TestConfig:
+    def _config(self, **kwargs) -> PlatformConfig:
+        return PlatformConfig(
+            database=DatabaseConfig(
+                host="localhost",
+                port=5432,
+                database="test",
+                user="test",
+                password="unused",  # noqa: S106 - test fixture, not a credential
+            ),
+            minio=MinIOConfig(
+                endpoint="http://localhost:9000",
+                access_key="test",
+                secret_key="unused",  # noqa: S106 - test fixture, not a credential
+            ),
+            **kwargs,
         )
-
-    def test_emit_received_event(self):
-        """Test raw_data.received event structure."""
-        event = self.connector.emit_received_event(
-            series_id="CPIAUCSL",
-            payload_reference="raw/fred/CPIAUCSL/date=2024-01-01/abc123.json",
-            sha256_hash="abc123",
-            correlation_id="test-correlation-123",
-        )
-
-        assert event.event_type == EventType.RAW_DATA_RECEIVED
-        assert event.source == "connectors.fred"
-        assert event.dataset_id == "fred_cpiaucsl"
-        assert event.correlation_id == "test-correlation-123"
-        assert event.payload_reference == "raw/fred/CPIAUCSL/date=2024-01-01/abc123.json"
-        assert event.metadata["sha256"] == "abc123"
-        assert event.metadata["series_id"] == "CPIAUCSL"
-
-    def test_event_has_required_fields(self):
-        """Test that emitted events have all required fields per event-schema.md."""
-        event = self.connector.emit_received_event(
-            series_id="CPIAUCSL",
-            payload_reference="test/path.json",
-            sha256_hash="test_hash",
-        )
-
-        event_dict = event.to_dict()
-
-        # Required fields per EventEnvelope
-        assert "event_id" in event_dict
-        assert "event_type" in event_dict
-        assert "source" in event_dict
-        assert "dataset_id" in event_dict
-        assert "timestamp" in event_dict
-        assert event_dict["event_type"] == "raw_data.received"
-        assert event_dict["source"] == "connectors.fred"
-
-
-class TestFREDConnectorConfig:
-    """Test configuration loading."""
 
     def test_from_config_requires_api_key(self):
-        """Test that from_config raises if API key is missing."""
-        from src.common.config import PlatformConfig, DatabaseConfig, MinIOConfig
-
-        config = PlatformConfig(
-            database=DatabaseConfig(
-                host="localhost",
-                port=5432,
-                database="test",
-                user="test",
-                password="test",
-            ),
-            minio=MinIOConfig(
-                endpoint="http://localhost:9000",
-                access_key="test",
-                secret_key="test",
-            ),
-            fred_api_key=None,  # Missing API key
-        )
-
         with pytest.raises(ValueError, match="FRED_API_KEY"):
-            FREDConnector.from_config(config)
+            FREDConnector.from_config(self._config(fred_api_key=None))
 
     def test_from_config_success(self):
-        """Test successful connector creation from config."""
-        from src.common.config import PlatformConfig, DatabaseConfig, MinIOConfig
-
-        config = PlatformConfig(
-            database=DatabaseConfig(
-                host="localhost",
-                port=5432,
-                database="test",
-                user="test",
-                password="test",
-            ),
-            minio=MinIOConfig(
-                endpoint="http://localhost:9000",
-                access_key="test",
-                secret_key="test",
-            ),
-            fred_api_key="test_key",
-            log_level="DEBUG",
+        connector = FREDConnector.from_config(
+            self._config(fred_api_key="test_key", log_level="DEBUG")
         )
-
-        connector = FREDConnector.from_config(config)
-
         assert connector.api_key == "test_key"
-        assert connector.minio_endpoint == "http://localhost:9000"
-        assert connector.log_level == "DEBUG"

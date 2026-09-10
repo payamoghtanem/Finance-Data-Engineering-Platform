@@ -6,7 +6,6 @@ following the design in docs/technical/technical-design-document.md.
 
 import os
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass(frozen=True)
@@ -42,8 +41,8 @@ class PlatformConfig:
     database: DatabaseConfig
     minio: MinIOConfig
     log_level: str = "INFO"
-    fred_api_key: Optional[str] = None
-    coingecko_api_key: Optional[str] = None
+    fred_api_key: str | None = None
+    coingecko_api_key: str | None = None
     sec_edgar_user_agent: str = "FinanceDataPlatform/0.1 (contact@example.com)"
 
     @classmethod

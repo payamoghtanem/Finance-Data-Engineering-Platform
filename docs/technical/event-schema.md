@@ -14,6 +14,11 @@
 | `schema_version` | string | Version of this event type's schema |
 | `correlation_id` | UUID | Ties together every event in one end-to-end pipeline run |
 | `payload_reference` | string | Pointer (object storage path or table row key) to the actual data — **never** the raw payload itself |
+| `dataset_id` | string | The dataset this event concerns, e.g. `fred_cpiaucsl`. Lets a consumer route or filter without dereferencing `payload_reference` |
+| `metadata` | object | Small, non-bulk context (checksum, source series id). Bound by the no-bulk-data rule below — a payload never goes here |
+
+The envelope is implemented in `src/events/models.py`; the field names there are
+these names exactly. A change to either side is a change to both.
 
 **Rule (from the source design note, retained deliberately):** never put bulk data inside the event message itself. The event carries an identifier and a location; the consumer fetches the actual data from Raw Storage / Bronze / Silver as needed. This keeps the event transport lightweight regardless of whether it's an in-process call (Phase 1, ADR-0002) or Kafka (Phase 2+).
 
