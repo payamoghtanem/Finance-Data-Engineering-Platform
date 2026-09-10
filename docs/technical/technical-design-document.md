@@ -50,7 +50,7 @@ Each `src/connectors/<name>/` package must contain, per NFR-MAINT-001: `README.m
 | `transform/` (dbt, EPIC-05) | Silver→Gold SQL transforms, canonical conformance (§2d) | Perform network I/O, manage scheduling, write back to Bronze |
 | `serving/api` | Expose Gold data per `api-design.md`, enforce auth/rate limits | Perform transformation logic, write to any table |
 | `serving/agent` | Read-only retrieval + natural-language response per `ai-agent/agentic-ai-design.md` | Any write, delete, schema, or backfill action |
-| `pipelines/dagster_project` (EPIC-07) | Scheduling, dependency graph, retries, backfills, run visibility (§2e) | Contain business/transform logic itself — it orchestrates other modules, it doesn't replace them |
+| `pipelines/dagster_project` (EPIC-07/08) | Scheduling, dependency graph, retries, backfills, run visibility (§2e), asset checks wiring `src/common/alerting.py`'s FR-OPS-002 rules to real data (§2f) | Contain business/transform logic itself — it orchestrates other modules, it doesn't replace them |
 
 ### 2a. Bronze storage shape (`bronze/`, EPIC-03)
 
@@ -214,6 +214,61 @@ A `from __future__ import annotations` import is deliberately absent from
 decorator validates the `context` parameter's type by identity against
 `AssetExecutionContext`, and PEP 563's postponed evaluation breaks that
 check — confirmed empirically while building this, not a style choice.
+
+### 2f. Alert detection (`src/common/alerting.py`, EPIC-08)
+
+Implements FR-OPS-002's three alert conditions as pure functions, reading
+only from `IngestionRunRecorder`/`DataQualityResultRecorder` history:
+
+| Function | FR-OPS-002 condition |
+|---|---|
+| `detect_consecutive_failures` | "a repeated ingestion failure (>= 2 consecutive failures for the same connector)" |
+| `detect_freshness_breach` | freshness SLO breach (NFR-FRESH-003: < 1 hour detection-to-alert latency, met by construction — this is a synchronous check with no queueing of its own) |
+| `detect_blocking_quality_failure` | "a data-quality blocking-test failure" |
+
+Each returns an `AlertEvent | None` — `None` means no alert, never a
+placeholder/empty alert, so a caller's `if alert:` check is the whole
+decision. `emit_alert(alert)` delivers it as a structured JSON ERROR-level
+log line — the one alert-delivery mechanism this project's own docs
+actually specify (`../engineering/engineering-standards.md` §5: "ERROR =
+human action needed"). No design doc (ARD, solution-design-document,
+mvp-plan) names a Prometheus/Grafana alert channel for Phase 1 — the
+`docker-compose` stack has Prometheus + Grafana but no Alertmanager and no
+notification integration, and inventing one wasn't this change's call to
+make silently. `src/common/logging_config.py`'s `setup_logging` was fixed in
+this same change to actually emit structured JSON (it previously produced a
+human-readable but non-JSON line despite its own docstring's claim) — this
+is what makes an alert log line genuinely machine-parseable rather than a
+regex target.
+
+**Wired into the real pipeline**: `pipelines/dagster_project/asset_checks.py`
+defines two `@asset_check`s on `fred_cpi_raw` —
+`fred_cpi_consecutive_failures_check` and `fred_cpi_freshness_check` — that
+call these functions against real `ingestion_run` history and `emit_alert`
+on failure. A failing check is visible per-run in the Dagster UI (FR-OPS-001)
+in addition to the log-based alert. `freshness_check`'s `max_lag` is a
+Phase 1 default (48h, generous relative to the daily schedule), not derived
+from the FRED contract's own `freshness_slo` free text — same reasoning as
+`src/validation/rules.py::check_freshness`.
+
+**`src/common/data_quality_result.py`** (`DataQualityResultRecorder`) gives
+the `data_quality_result` table from `data-model.md` §4 a real, queryable
+home for the first time — one row per `(test_id, table_name)`, upserted to
+the latest evaluation (the table's own documented primary key has no
+run_id/timestamp component, so it's a current-state table, not an audit
+log, unlike `ingestion_run`). **Honest scope limit**: nothing writes to it
+yet — `ValidationEngine` (EPIC-04) still returns a `ValidationReport` in
+memory only. Wiring `ValidationEngine.validate()` to call this recorder is
+follow-on work (tracked in STATUS.md), not done in this change, to avoid
+bolting a second half-finished integration onto EPIC-08's own scope.
+
+**Deliberately not built in this change**: Grafana dashboard JSON or
+alert-rule provisioning files. `infra/grafana/provisioning/` currently has
+only a datasource config; a live Grafana instance is needed to verify any
+dashboard/alert-rule config actually loads, and no Docker daemon is
+available in an agent session (same constraint as `Dockerfile.dagster`,
+DEBT-09) — writing unverified provisioning YAML would be guessing, not
+building. See STATUS.md's EPIC-08 entry.
 
 ## 3. Retry / backoff algorithm (implements FR-ING-001 etc.)
 

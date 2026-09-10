@@ -13,6 +13,7 @@ from typing import Any
 from dagster import ConfigurableResource
 from src.bronze.writer import BronzeWriter
 from src.common.config import PlatformConfig
+from src.common.ingestion_run import IngestionRun, IngestionRunRecorder
 from src.common.raw_storage import S3RawStorage
 from src.common.version import get_code_version
 from src.connectors.fred.connector import FREDConnector
@@ -64,3 +65,23 @@ class BronzeResource(ConfigurableResource):  # type: ignore[type-arg]
         finally:
             writer.close()
         return {"bronze_id": record.bronze_id, "raw_object_key": record.raw_object_key}
+
+
+class IngestionRunHistoryResource(ConfigurableResource):  # type: ignore[type-arg]
+    """Reads `ingestion_run` history using the real `IngestionRunRecorder`.
+
+    Read-only from this resource's side -- `fred_cpi_raw` (via
+    `FREDIngestionResource` -> `FREDConnector.run_ingestion`) is what writes
+    these rows; this resource exists so EPIC-08's asset checks
+    (`asset_checks.py`) can read that same history back without duplicating
+    `IngestionRunRecorder`'s own DuckDB access.
+    """
+
+    db_path: str = "ops_store/ingestion_runs.duckdb"
+
+    def list_for_dataset(self, dataset_id: str) -> list[IngestionRun]:
+        recorder = IngestionRunRecorder(db_path=self.db_path)
+        try:
+            return recorder.list_for_dataset(dataset_id)
+        finally:
+            recorder.close()
