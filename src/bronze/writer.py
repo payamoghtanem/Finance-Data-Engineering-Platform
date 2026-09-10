@@ -21,6 +21,8 @@ from typing import Any
 import duckdb
 
 from src.common.raw_storage import RawStorage, RawStorageError
+from src.events.bus import EventBus
+from src.events.models import EventEnvelope, EventType
 
 
 class BronzeWriteError(Exception):
@@ -92,13 +94,22 @@ class BronzeWriter:
             network — only ever read via `raw_storage.get()`.
         db_path: Path to the DuckDB file backing Bronze in Phase 1. `:memory:`
             is a valid value for tests.
+        event_bus: Where `bronze_data.written` is published (EPIC-06) — this
+            module is that event's documented producer
+            (docs/technical/event-schema.md §2). Defaults to a fresh, private
+            `EventBus`. Not published on an idempotent no-op write, since
+            nothing new was actually written then.
     """
 
     def __init__(
-        self, raw_storage: RawStorage, db_path: str | Path = "bronze_store/bronze.duckdb"
+        self,
+        raw_storage: RawStorage,
+        db_path: str | Path = "bronze_store/bronze.duckdb",
+        event_bus: EventBus | None = None,
     ) -> None:
         self.raw_storage = raw_storage
         self.db_path = str(db_path)
+        self.event_bus = event_bus or EventBus()
         if self.db_path != ":memory:":
             Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         self._conn: Any = duckdb.connect(self.db_path)
@@ -160,7 +171,7 @@ class BronzeWriter:
             ],
         )
 
-        return BronzeRecord(
+        record = BronzeRecord(
             bronze_id=bronze_id,
             source_id=source_id,
             dataset_id=dataset_id,
@@ -171,6 +182,16 @@ class BronzeWriter:
             ingested_at=ingested_at,
             payload=payload,
         )
+        self.event_bus.publish(
+            EventEnvelope(
+                event_type=EventType.BRONZE_DATA_WRITTEN,
+                producer="bronze.writer",
+                dataset_id=dataset_id,
+                payload_reference=raw_object_key,
+                metadata={"bronze_id": bronze_id, "sha256": actual_sha256},
+            )
+        )
+        return record
 
     def _get(self, bronze_id: str) -> BronzeRecord | None:
         row = self._conn.execute(

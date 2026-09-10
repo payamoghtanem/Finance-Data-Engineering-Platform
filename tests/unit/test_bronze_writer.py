@@ -114,3 +114,50 @@ class TestNoNetworkAccess:
             code_version="0.1.0",
         )
         assert record.payload == PAYLOAD
+
+
+class TestEventPublication:
+    """EPIC-06: BronzeWriter is bronze_data.written's documented producer."""
+
+    def test_successful_write_publishes_bronze_data_written(
+        self, raw_storage: LocalRawStorage
+    ) -> None:
+        from src.events.bus import EventBus
+        from src.events.models import EventType
+
+        bus = EventBus()
+        writer = BronzeWriter(raw_storage=raw_storage, db_path=":memory:", event_bus=bus)
+
+        writer.write(
+            source_id="fred",
+            dataset_id="fred_cpiaucsl",
+            raw_object_key="raw/fred/CPIAUCSL/date=2024-01-01/abc.json",
+            raw_sha256=compute_sha256(PAYLOAD),
+            retrieved_at=datetime(2024, 1, 1, tzinfo=UTC),
+            code_version="0.1.0",
+        )
+
+        published = bus.history(EventType.BRONZE_DATA_WRITTEN)
+        assert len(published) == 1
+        assert published[0].dataset_id == "fred_cpiaucsl"
+        assert published[0].payload_reference == "raw/fred/CPIAUCSL/date=2024-01-01/abc.json"
+
+    def test_idempotent_noop_write_does_not_republish(self, raw_storage: LocalRawStorage) -> None:
+        from src.events.bus import EventBus
+        from src.events.models import EventType
+
+        bus = EventBus()
+        writer = BronzeWriter(raw_storage=raw_storage, db_path=":memory:", event_bus=bus)
+        kwargs = {
+            "source_id": "fred",
+            "dataset_id": "fred_cpiaucsl",
+            "raw_object_key": "raw/fred/CPIAUCSL/date=2024-01-01/abc.json",
+            "raw_sha256": compute_sha256(PAYLOAD),
+            "retrieved_at": datetime(2024, 1, 1, tzinfo=UTC),
+            "code_version": "0.1.0",
+        }
+
+        writer.write(**kwargs)
+        writer.write(**kwargs)  # same raw object again — a no-op
+
+        assert len(bus.history(EventType.BRONZE_DATA_WRITTEN)) == 1
