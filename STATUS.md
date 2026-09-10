@@ -44,7 +44,7 @@ up next* from this file alone — without access to a prior chat session.
 |---|---|---|---|
 | EPIC-02 remainder: `ingestion_run` record, DLQ, full idempotency | **Not started** | — | Needs the storage/DB layer from EPIC-03 |
 | EPIC-03 — Raw & Bronze with provenance | **Next** | — | MinIO backend behind the existing `RawStorage` protocol |
-| GitHub Issues / milestones / project board seeding | **Blocked — awaiting owner approval** | human | Outward-facing; see §5 |
+| Project #6 auto-add workflow | **Blocked — awaiting owner** | human | One-time board setting; see §8. Issues themselves are already seeded. |
 
 ## 4. What to do next (ordered)
 
@@ -53,7 +53,7 @@ The next agent should start at the **top unchecked item**.
 1. [x] ~~Owner: merge PR #12 into `main`~~ — **Merged 2026-09-10** (`9ae5e24`).
 2. [ ] **Owner decision:** pick a `LICENSE` (D-01) — blocks any public release.
 3. [x] ~~Owner decision: approve seeding GitHub Issues~~ — **Done 2026-09-10.** Phase 1 backlog seeded as Issues #13-#58 (see §8). Phase 2-3 epics (EPIC-14..EPIC-24) intentionally not seeded yet, matching `docs/backlog/user-stories.md`'s own rule against decomposing them early.
-4. [ ] **Optional cleanup:** `QWEN-Code-Agent` and `mvp-implementation-analysis-6b834` branches are superseded now that PR #12 is merged — safe to delete so no one starts from the unrepaired version.
+4. [x] ~~Optional cleanup: delete superseded branches~~ — **Done.** `QWEN-Code-Agent` and `mvp-implementation-analysis-6b834` are gone (auto-deleted on merge).
 5. [ ] **EPIC-03:** MinIO/S3 backend implementing the `RawStorage` protocol in `src/common/raw_storage.py`; Bronze writer with lineage back to the raw object key.
 6. [ ] **EPIC-02 remainder:** `ingestion_run` record (FR-OPS-001), DLQ routing (FR-OPS-003), end-to-end idempotency test (US-02-004).
 7. [ ] **EPIC-07:** Dagster project under `pipelines/` — this directory still does not exist.
