@@ -5,9 +5,12 @@ description = "Finance & Economic Data Engineering Platform"
 requires-python = ">=3.11"
 readme = "README.md"
 
-# Runtime dependencies are added in EPIC-01 as modules land.
-# Pinning happens in the committed lockfile, not here.
-dependencies = []
+# Runtime dependencies are added as modules land. Pinning happens in the
+# committed lockfile, not here.
+dependencies = [
+  "boto3>=1.34",   # S3RawStorage (EPIC-03, US-03-001) — the MinIO client
+  "duckdb>=1.0",   # BronzeWriter (EPIC-03, US-03-002) — Phase 1 query engine per mvp-plan.md §2
+]
 
 [project.optional-dependencies]
 dev = [
@@ -16,6 +19,7 @@ dev = [
   "mypy>=1.10",
   "ruff>=0.5",
   "pre-commit>=3.7",
+  "moto[s3]>=5.0",  # mocks S3/MinIO for S3RawStorage tests — no live network call
 ]
 
 [build-system]
@@ -48,6 +52,13 @@ disallow_any_generics = true
 no_implicit_optional = true
 show_error_codes = true
 exclude = ["^tests/fixtures/"]
+
+# boto3/botocore ship no py.typed marker and no first-party stubs; boto3-stubs
+# is a heavy extra dependency this project doesn't otherwise need. Narrowing
+# the ignore to just these two modules keeps --strict meaningful everywhere else.
+[[tool.mypy.overrides]]
+module = ["boto3.*", "botocore.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

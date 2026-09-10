@@ -11,7 +11,7 @@
 
 | Requirement | BRD goal (`../business/BRD.md`) | PRD capability (`../business/PRD.md`) | Implementation | Test |
 |---|---|---|---|---|
-| FR-ING-001 (FRED CPI ingestion) | §4 Eliminates manual data collection; §4 Provenance provable | §3 Must-have: Canonical query API; §2.1 Ana's journey | `src/connectors/fred/connector.py` (fetch, raw store, retry — **partial**: idempotent writes and `ingestion_run` pending EPIC-03) | `tests/unit/test_fred_connector.py::TestRetryBehaviour`, `::TestRawStorage` |
+| FR-ING-001 (FRED CPI ingestion) | §4 Eliminates manual data collection; §4 Provenance provable | §3 Must-have: Canonical query API; §2.1 Ana's journey | `src/connectors/fred/connector.py` (fetch, raw store via `S3RawStorage`, retry) + `src/bronze/writer.py` (Bronze lineage) — **partial**: `ingestion_run` recording pending (EPIC-02 remainder) | `tests/unit/test_fred_connector.py::TestRetryBehaviour`, `::TestRawStorage`; `tests/unit/test_s3_raw_storage.py`; `tests/unit/test_bronze_writer.py` |
 | FR-ING-002 (World Bank ingestion) | §4 Eliminates manual data collection | §3 Must-have: Dataset catalog & search | — | — |
 | FR-ING-003 (Eurostat SDMX ingestion) | §4 Reproducible analysis | §2.1 Ana's journey (aligned inflation comparison) | — | — |
 | FR-ING-004 (SEC EDGAR ingestion) | §4 Provenance provable | §3 Must-have: Canonical query API | — | — |
@@ -41,9 +41,9 @@
 | NFR-RPO-001, NFR-RTO-001..002 | §6 KPI: recovery time < 4h | `NFR.md` §3 | — |
 | NFR-PERF-001..003 | §4 Value proposition: reproducible, fast analysis | `NFR.md` §4 | — |
 | NFR-SEC-001..005 | §7 Risk: secret leakage, license/legal exposure | `NFR.md` §5 | `tests/unit/test_fred_connector.py::TestSecretHandling` (NFR-SEC-003); gitleaks in CI |
-| NFR-GOV-001..003 | §6 KPI: 100% complete metadata | `NFR.md` §6 | — |
+| NFR-GOV-001..003 | §6 KPI: 100% complete metadata | `NFR.md` §6 | `src/bronze/writer.py` (lineage columns: `raw_object_key`, `source_id`, `retrieved_at`, `code_version`); `tests/unit/test_bronze_writer.py::TestBronzeWrite::test_lineage_round_trip` (NFR-GOV-002) |
 | NFR-MAINT-001..003 | §7 Risk: over-engineering / unsustainable solo maintenance | `NFR.md` §7 | — |
-| NFR-AUDIT-001..003 | §4 Provenance provable; §7 Risk: AI agent scope creep | `NFR.md` §8 | `tests/unit/test_fred_connector.py::TestRawStorage::test_checksum_matches_original_payload` (NFR-AUDIT-001) |
+| NFR-AUDIT-001..003 | §4 Provenance provable; §7 Risk: AI agent scope creep | `NFR.md` §8 | `tests/unit/test_fred_connector.py::TestRawStorage::test_checksum_matches_original_payload`; `tests/unit/test_bronze_writer.py::TestBronzeWrite::test_checksum_mismatch_raises` (independently recomputed checksum, not trusted from the caller) (NFR-AUDIT-001) |
 | NFR-SCALE-001..003 | §1 Vision: laptop → cloud without rewrite | `NFR.md` §9 | — |
 | NFR-COST-001..003 | §7 Risk: cloud cost growth outpacing value | `NFR.md` §10 | — |
 

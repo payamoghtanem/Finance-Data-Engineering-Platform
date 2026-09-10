@@ -16,7 +16,8 @@
 │   │   ├── sec_edgar/
 │   │   └── coingecko/
 │   ├── validation/             # Schema + data-quality rule engine (FR-QUAL-xxx)
-│   ├── transform/               # dbt project (Bronze→Silver→Gold models)
+│   ├── bronze/                  # Loads a raw object into Bronze with full lineage (NFR-GOV-002)
+│   ├── transform/               # dbt project (Silver→Gold models)
 │   │   └── dbt_project/
 │   ├── serving/
 │   │   ├── api/                # FastAPI app implementing api-design.md
@@ -44,10 +45,33 @@ Each `src/connectors/<name>/` package must contain, per NFR-MAINT-001: `README.m
 |---|---|---|
 | `connectors/*` | Fetch from one external source, write raw response to Raw Storage, emit `raw_data.received` | Parse business meaning, write to Silver/Gold, know about other connectors |
 | `validation/` | Check schema + data contract + quality rules, emit `raw_data.validated` or `raw_data.quarantined` | Fetch data itself, transform/rename fields for business meaning |
-| `transform/` (dbt) | Bronze→Silver→Gold SQL transforms, canonical conformance | Perform network I/O, manage scheduling |
+| `bronze/` | Load one raw object into Bronze with lineage back to it (`raw_object_key`, `source_id`, `retrieved_at`, `code_version`), emit `bronze_data.written`. Reads only from `RawStorage` — never re-fetches from the source (ARD §2.2) | Parse business fields into typed/canonical columns (that's `transform/`'s job, FR-MODEL-001), fetch data itself |
+| `transform/` (dbt) | Silver→Gold SQL transforms, canonical conformance | Perform network I/O, manage scheduling |
 | `serving/api` | Expose Gold data per `api-design.md`, enforce auth/rate limits | Perform transformation logic, write to any table |
 | `serving/agent` | Read-only retrieval + natural-language response per `ai-agent/agentic-ai-design.md` | Any write, delete, schema, or backfill action |
 | `pipelines/dagster_project` | Scheduling, dependency graph, retries, backfills, run visibility | Contain business/transform logic itself — it orchestrates other modules, it doesn't replace them |
+
+### 2a. Bronze storage shape (`bronze/`, EPIC-03)
+
+Bronze mirrors Raw's content plus lineage — it does **not** parse business
+fields into typed columns; that conformance step is `transform/`'s job
+(FR-MODEL-001, EPIC-05), not this module's. One row per raw object:
+
+| Column | Notes |
+|---|---|
+| `bronze_id` | Deterministic hash of `raw_object_key` — makes a re-load of the same raw object a no-op, not a duplicate |
+| `source_id`, `dataset_id` | Denormalized from the ingestion run for query convenience |
+| `raw_object_key` | The exact `RawStorage` key this row was loaded from |
+| `raw_sha256` | Recomputed from the bytes at load time and compared against the key's own hash suffix — catches silent corruption between write and read |
+| `retrieved_at`, `code_version` | Copied from provenance, not re-derived |
+| `ingested_at` | When *this* Bronze row was written (distinct from `retrieved_at`, per the time-field discipline in `data-model.md` §5) |
+| `payload` | The raw JSON, untouched, as text |
+
+Phase 1 storage: a local DuckDB file (`bronze_store/bronze.duckdb`) — DuckDB is
+already the Phase 1 query engine per `../roadmap/mvp-plan.md` §2, so this adds
+no new infrastructure. It becomes an Iceberg table per `data-model.md` §1 when
+the platform moves off a single laptop; nothing above this storage detail
+changes when that swap happens.
 
 ## 3. Retry / backoff algorithm (implements FR-ING-001 etc.)
 

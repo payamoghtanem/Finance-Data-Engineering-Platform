@@ -8,8 +8,12 @@ Storage is content-addressed: the object key contains the SHA-256 of the exact
 payload bytes. Writing the same payload twice therefore resolves to the same
 key and is a no-op, which is what makes the raw layer idempotent (FR-ING-001).
 
-Phase 1 uses a local filesystem backend. The MinIO/S3 backend lands in EPIC-03
-behind the same `RawStorage` protocol, so no caller changes when it arrives.
+Two `RawStorage` implementations exist behind the same protocol, so a caller
+never changes when swapping one for the other:
+
+- `LocalRawStorage` — filesystem-backed, used where a bucket isn't available.
+- `S3RawStorage` — the MinIO/S3 backend (EPIC-03, US-03-001), the one the
+  Phase 1 `docker-compose.yml` `minio` service is actually for.
 """
 
 from __future__ import annotations
@@ -17,7 +21,10 @@ from __future__ import annotations
 import hashlib
 from datetime import datetime
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
+
+import boto3
+from botocore.exceptions import ClientError
 
 
 class RawStorageError(Exception):
@@ -97,3 +104,79 @@ class LocalRawStorage:
             return self._path(key).read_bytes()
         except OSError as exc:
             raise RawStorageError(f"Could not read raw payload at {key}: {exc}") from exc
+
+
+class S3RawStorage:
+    """S3/MinIO-backed `RawStorage` — the Phase 1 production backend.
+
+    Content-addressed the same way as `LocalRawStorage`: `put` checks for the
+    object's existence before writing, so storing an already-present key is a
+    no-op rather than a duplicate write (the idempotency half of FR-ING-001).
+
+    The `boto3` client is injected so tests run against a mocked S3 (moto),
+    never a live network call, per docs/engineering/test-strategy.md §2.
+    """
+
+    def __init__(
+        self,
+        bucket: str,
+        endpoint_url: str,
+        access_key: str,
+        secret_key: str,
+        client: Any | None = None,
+    ) -> None:
+        self.bucket = bucket
+        self._client: Any = client or boto3.client(
+            "s3",
+            endpoint_url=endpoint_url,
+            aws_access_key_id=access_key,
+            aws_secret_access_key=secret_key,
+        )
+
+    def ensure_bucket(self) -> None:
+        """Create the bucket if it does not already exist. Safe to call every startup."""
+        try:
+            self._client.head_bucket(Bucket=self.bucket)
+        except ClientError:
+            self._client.create_bucket(Bucket=self.bucket)
+
+    def put(self, key: str, payload: bytes) -> str:
+        if self.exists(key):
+            # Content-addressed: identical key means identical bytes already stored.
+            return key
+        try:
+            self._client.put_object(Bucket=self.bucket, Key=key, Body=payload)
+        except ClientError as exc:
+            raise RawStorageError(
+                f"Could not write raw payload to s3://{self.bucket}/{key}: {exc}"
+            ) from exc
+        return key
+
+    def exists(self, key: str) -> bool:
+        try:
+            self._client.head_object(Bucket=self.bucket, Key=key)
+            return True
+        except ClientError as exc:
+            error_code = exc.response.get("Error", {}).get("Code", "")
+            if error_code in ("404", "NoSuchKey", "NotFound"):
+                return False
+            raise RawStorageError(f"Could not check s3://{self.bucket}/{key}: {exc}") from exc
+
+    def get(self, key: str) -> bytes:
+        try:
+            response = self._client.get_object(Bucket=self.bucket, Key=key)
+            return bytes(response["Body"].read())
+        except ClientError as exc:
+            raise RawStorageError(
+                f"Could not read raw payload at s3://{self.bucket}/{key}: {exc}"
+            ) from exc
+
+    @classmethod
+    def from_config(cls, minio_config: Any) -> S3RawStorage:
+        """Build from a `MinIOConfig` (src/common/config.py)."""
+        return cls(
+            bucket=minio_config.raw_bucket,
+            endpoint_url=minio_config.endpoint,
+            access_key=minio_config.access_key,
+            secret_key=minio_config.secret_key,
+        )
