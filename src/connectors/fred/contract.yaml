@@ -1,0 +1,43 @@
+# Data contract for FRED CPI series
+# Per docs/architecture/solution-design-document.md §4 and FR-ING-006
+
+dataset: fred_cpi_daily
+owner: connectors.fred
+source: fred
+version: 1.0.0
+
+# Primary key per FR-QUAL-003 (uniqueness)
+primary_key:
+  - source_id
+  - observed_at
+
+freshness_slo: "available by 08:30 America/New_York on release days (typically mid-month)"
+
+schema:
+  observed_at: timestamp_utc
+  value: decimal(20,8)
+  source_id: string
+  series_id: string
+  realtime_start: date
+  realtime_end: date
+
+quality_rules:
+  - value_not_null
+  - value_positive
+  - primary_key_unique
+  - schema_valid
+
+change_policy:
+  breaking_change_requires: major_version_and_consumer_approval
+
+# Metadata for dim_source mapping
+metadata:
+  fred_series_id: CPIAUCSL
+  title: Consumer Price Index for All Urban Consumers
+  units: Index 1982-1984=100
+  frequency: Monthly
+  seasonal_adjustment: Seasonally Adjusted
+  last_updated: varies
+  source_name: U.S. Bureau of Labor Statistics
+  trust_tier: 1  # Official statistical body
+  license: Public domain (U.S. government work)

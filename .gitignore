@@ -1,9 +1,10 @@
-# Secrets — never commit
+# Secrets — never commit (NFR-SEC-003)
 .env
 .env.*
 !.env.example
 *.pem
 *.key
+*.p12
 credentials.json
 secrets/
 
@@ -28,19 +29,26 @@ htmlcov/
 
 # Data — never commit raw or derived data
 data/
+raw_store/
 *.parquet
 *.duckdb
 *.sqlite
 *.db
 
+# Logs
+logs/
+*.log
+
 # dbt
 target/
 dbt_packages/
-logs/
 
 # Dagster
 .dagster/
 dagster_home/
+
+# Docker
+.dockerenv
 
 # OS / editor
 .DS_Store

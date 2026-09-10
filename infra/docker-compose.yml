@@ -1,0 +1,183 @@
+# Phase 1 Local MVP Stack
+# Matches docs/technical/technical-design-document.md §6 and docs/roadmap/mvp-plan.md §2
+# NO Kafka, NO Kubernetes, NO Keycloak, NO Vault in Phase 1 (see ADR-0002, ADR-0004)
+
+services:
+  # PostgreSQL: metadata, job state, API cache
+  postgres:
+    image: postgres:15-alpine
+    container_name: finance_postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-finance_platform}
+      POSTGRES_USER: ${POSTGRES_USER:-platform}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_locally}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-platform}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - finance_network
+
+  # MinIO: Raw Object Storage + Bronze/Silver/Gold Iceberg data
+  minio:
+    image: minio/minio:RELEASE.2024-01-01T16-36-51Z
+    container_name: finance_minio
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-change_me_locally}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-change_me_locally}
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"  # S3-compatible API
+      - "9001:9001"  # MinIO Console
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - finance_network
+
+  # Dagster: orchestration — schedules, sensors, run visibility
+  dagster:
+    build:
+      context: .
+      dockerfile: Dockerfile.dagster
+    container_name: finance_dagster
+    environment:
+      - DAGSTER_HOME=/opt/dagster/home
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${POSTGRES_DB:-finance_platform}
+      - POSTGRES_USER=${POSTGRES_USER:-platform}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-change_me_locally}
+      - MINIO_ENDPOINT=http://minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-change_me_locally}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-change_me_locally}
+    ports:
+      - "3000:3000"
+    volumes:
+      - dagster_home:/opt/dagster/home
+      - ./pipelines/dagster_project:/opt/dagster/project
+      - ./src:/opt/src
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - finance_network
+
+  # dbt Core: Bronze→Silver→Gold transforms (invoked by Dagster)
+  dbt:
+    image: ghcr.io/dbt-labs/dbt-postgres:1.7
+    container_name: finance_dbt
+    working_dir: /usr/app
+    volumes:
+      - ./src/transform/dbt_project:/usr/app
+      - ./src:/opt/src
+    environment:
+      - DBT_PROFILES_DIR=/usr/app
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${POSTGRES_DB:-finance_platform}
+      - POSTGRES_USER=${POSTGRES_USER:-platform}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-change_me_locally}
+    networks:
+      - finance_network
+
+  # Metabase: dashboards over Gold models
+  metabase:
+    image: metabase/metabase:v0.47.0
+    container_name: finance_metabase
+    environment:
+      MB_DB_TYPE: postgres
+      MB_DB_DBNAME: ${POSTGRES_DB:-finance_platform}
+      MB_DB_PORT: 5432
+      MB_DB_USER: ${POSTGRES_USER:-platform}
+      MB_DB_PASS: ${POSTGRES_PASSWORD:-change_me_locally}
+      MB_DB_HOST: postgres
+    ports:
+      - "3001:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - finance_network
+
+  # API: FastAPI serving service
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: finance_api
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${POSTGRES_DB:-finance_platform}
+      - POSTGRES_USER=${POSTGRES_USER:-platform}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-change_me_locally}
+      - MINIO_ENDPOINT=http://minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-change_me_locally}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-change_me_locally}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./src:/opt/src
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - finance_network
+
+  # Prometheus: metrics scraping
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    container_name: finance_prometheus
+    volumes:
+      - ./infra/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    ports:
+      - "9090:9090"
+    networks:
+      - finance_network
+
+  # Grafana: operational dashboards
+  grafana:
+    image: grafana/grafana:10.2.0
+    container_name: finance_grafana
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: change_me_locally
+      GF_INSTALL_PLUGINS: grafana-clock-panel,grafana-simple-json-datasource
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning
+    ports:
+      - "3002:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - finance_network
+
+volumes:
+  postgres_data:
+  minio_data:
+  dagster_home:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  finance_network:
+    driver: bridge
