@@ -10,6 +10,7 @@ readme = "README.md"
 dependencies = [
   "boto3>=1.34",   # S3RawStorage (EPIC-03, US-03-001) — the MinIO client
   "duckdb>=1.0",   # BronzeWriter (EPIC-03, US-03-002) — Phase 1 query engine per mvp-plan.md §2
+  "pyyaml>=6.0",   # validation.contract (EPIC-04, US-04-001) — loads contract.yaml at runtime
 ]
 
 [project.optional-dependencies]
@@ -20,6 +21,7 @@ dev = [
   "ruff>=0.5",
   "pre-commit>=3.7",
   "moto[s3]>=5.0",  # mocks S3/MinIO for S3RawStorage tests — no live network call
+  "types-PyYAML>=6.0",  # stubs for pyyaml, so mypy --strict can check validation.contract
 ]
 
 [build-system]

@@ -10,7 +10,7 @@ up next* from this file alone — without access to a prior chat session.
 > row here is incomplete, exactly like an FR without a traceability row.
 
 - **Last updated:** 2026-09-10
-- **Current phase:** Phase 1 — Local MVP, **in progress** (EPIC-01 done, EPIC-02 mostly done, EPIC-03 done, EPIC-06 done). `main` branch-protected. Phase 1 backlog is live as GitHub Issues (§8). 53 unit tests, 90% coverage.
+- **Current phase:** Phase 1 — Local MVP, **in progress** (EPIC-01 done, EPIC-02 mostly done, EPIC-03 done, EPIC-04 done, EPIC-06 done). `main` branch-protected. Phase 1 backlog is live as GitHub Issues (§8). 95 unit tests, 90% coverage.
 - **Active branch:** `Claude-Code-Agent`
 - **Runtime code exists:** **Yes.** `src/`, `infra/`, `tests/` exist. `pipelines/` (Dagster) does not yet.
 
@@ -39,6 +39,7 @@ up next* from this file alone — without access to a prior chat session.
 - [x] **EPIC-02 (mostly done)** — FRED connector: fetch, retry/backoff with transient-vs-permanent split, content-addressed immutable raw storage, documented event emission, `ingestion_run` recording for every attempt (success and failure — US-02-005). Still open: US-02-006 (vintage awareness) and fact-table idempotency, both genuinely blocked on EPIC-05 (Silver layer), not just unstarted.
 - [x] **EPIC-03** — `S3RawStorage` (real MinIO/S3 backend behind the existing `RawStorage` protocol, US-03-001) and `src/bronze/writer.py` (Bronze lineage — `raw_object_key`/`source_id`/`retrieved_at`/`code_version`, US-03-002; proven to need no network access, US-03-003). `FREDConnector.from_config` now defaults to `S3RawStorage` instead of the local filesystem. Done at the unit-test level only — never run against a *live* MinIO container, only moto-mocked S3 and in-memory DuckDB; first real run happens naturally once EPIC-07 (Dagster) exercises the full local stack.
 - [x] **EPIC-06** — `src/events/bus.py`'s `EventBus`: the Phase 1 in-process publish/subscribe transport ADR-0002 calls for. One subscriber raising never stops the others or propagates to the publisher (proven by test). `connectors/fred` and `bronze/writer.py` now actually *publish* through it — not just construct and log an `EventEnvelope`, which is what US-06-001 is really about (a stage advances only on a real published event, never a bare signal). The rest of the documented producers (Dagster, validation, Silver/Gold) don't exist yet, so this bus currently has exactly two real producers and no real consumers — the mechanism is proven, not yet the full flow.
+- [x] **EPIC-04** — `src/validation/` (contract loading, the nine FR-QUAL-001..009 rules, `ValidationEngine`): `load_contract()` parses a connector's real `contract.yaml` at runtime (no second hand-copied schema); each rule is a pure function returning `PASSED`/`FAILED`/`FLAGGED`/`SKIPPED`; `ValidationEngine.validate()` runs all nine and publishes `raw_data.validated`/`raw_data.quarantined` through `EventBus` — validation is now the 3rd real event producer (`docs/technical/event-schema.md` §4). **Honest scope limits, not gaps papered over**: FR-QUAL-002/004/006/007 need external context this engine has no independent source for yet (an expected-record calendar, a freshness `max_lag`, dimension-table keys, a source's own count/checksum) and return `SKIPPED` rather than a false pass when it's absent (`docs/technical/technical-design-document.md` §2c has the full table of what/who). Not yet wired as a live consumer of `raw_data.received` — that needs a source-specific payload parser (FRED's raw JSON → the contract's record shape), which doesn't exist for any connector yet; `BronzeWriter` also still isn't rewired onto events (still called directly), deliberately left alone rather than bolting on a second half-finished integration in the same change.
 
 ## 3. What is in progress
 
@@ -59,10 +60,12 @@ The next agent should start at the **top unchecked item**.
 5. [x] ~~EPIC-03: MinIO/S3 backend + Bronze writer~~ — **Done 2026-09-10** (unit-test level; see §2 above for the live-MinIO caveat).
 6. [x] ~~EPIC-02 remainder: `ingestion_run` record~~ — **Done 2026-09-10** (US-02-005; see §2 above). DLQ routing was mis-scoped here originally: `docs/backlog/epics.md` actually assigns FR-OPS-003 to **EPIC-09**, which depends on EPIC-06 (event transport) being further along than it is — building DLQ now would jump the epic sequence the backlog itself warns against. Corrected rather than followed blindly.
 7. [x] ~~EPIC-06: in-process event transport~~ — **Done 2026-09-10** (`EventBus`; see §2 above). Mechanism proven with two real producers; no real consumer exists yet since Validation/Silver (EPIC-04/05) don't.
-8. [ ] **EPIC-07:** Dagster project under `pipelines/` — this directory still does not exist. Depends on EPIC-02 (done) and EPIC-06 (done) per `docs/backlog/epics.md`, so this is now unblocked.
-9. [ ] Write `docs/architecture/capacity-model.md` — data volumes at 12/36 months. NFR targets currently have no load model behind them.
-10. [ ] Write `docs/architecture/threat-model.md` — STRIDE pass over ingestion, API, agent, secrets.
-11. [ ] Create `runbooks/` + `runbook-template.md` (required by NFR-MAINT-001).
+8. [x] ~~EPIC-04: data-quality rule engine~~ — **Done 2026-09-10** (`src/validation/`; see §2 above). Built ahead of EPIC-05 by explicit owner choice, because `docs/backlog/epics.md` lists EPIC-05 as depending on **both** EPIC-03 and EPIC-04, not EPIC-03 alone.
+9. [ ] **EPIC-05:** Silver/Gold dbt modelling (`src/transform/`) — now unblocked (EPIC-03 and EPIC-04 both done, per `docs/backlog/epics.md`). This is what finally closes US-02-004 (fact-table idempotency) and US-02-006 (vintage awareness) from EPIC-02, and would also be the natural place to give `ValidationEngine`'s FR-QUAL-006 rule its first real dimension-table keys.
+10. [ ] **EPIC-07:** Dagster project under `pipelines/` — this directory still does not exist. Depends on EPIC-02 (done) and EPIC-06 (done) per `docs/backlog/epics.md`, so this is unblocked independently of EPIC-05, and is also what would give FR-QUAL-002/004/007 their missing scheduling context (§2 above).
+11. [ ] Write `docs/architecture/capacity-model.md` — data volumes at 12/36 months. NFR targets currently have no load model behind them.
+12. [ ] Write `docs/architecture/threat-model.md` — STRIDE pass over ingestion, API, agent, secrets.
+13. [ ] Create `runbooks/` + `runbook-template.md` (required by NFR-MAINT-001).
 
 ## 5. Open decisions blocking work
 
