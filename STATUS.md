@@ -10,7 +10,7 @@ up next* from this file alone — without access to a prior chat session.
 > row here is incomplete, exactly like an FR without a traceability row.
 
 - **Last updated:** 2026-09-10
-- **Current phase:** Phase 1 — Local MVP, **in progress** (EPIC-01 done, EPIC-02 partial). Fix PR #12 open, green, awaiting owner merge. `main` now branch-protected.
+- **Current phase:** Phase 1 — Local MVP, **in progress** (EPIC-01 done, EPIC-02 partial). PR #12 merged into `main` 2026-09-10. `main` now branch-protected. Phase 1 backlog is live as GitHub Issues (§8).
 - **Active branch:** `Claude-Code-Agent`
 - **Runtime code exists:** **Yes.** `src/`, `infra/`, `tests/` exist. `pipelines/` (Dagster) does not yet.
 
@@ -45,21 +45,21 @@ up next* from this file alone — without access to a prior chat session.
 | EPIC-02 remainder: `ingestion_run` record, DLQ, full idempotency | **Not started** | — | Needs the storage/DB layer from EPIC-03 |
 | EPIC-03 — Raw & Bronze with provenance | **Next** | — | MinIO backend behind the existing `RawStorage` protocol |
 | GitHub Issues / milestones / project board seeding | **Blocked — awaiting owner approval** | human | Outward-facing; see §5 |
-| PR #12 (EPIC-01/02 fixes) → `main` | **Ready — awaiting owner merge** | human | 6/6 checks green, `mergeable_state: clean`. Owner merges, not the agent. |
 
 ## 4. What to do next (ordered)
 
 The next agent should start at the **top unchecked item**.
 
-1. [ ] **Owner:** merge PR #12 into `main` (green, clean, ready).
+1. [x] ~~Owner: merge PR #12 into `main`~~ — **Merged 2026-09-10** (`9ae5e24`).
 2. [ ] **Owner decision:** pick a `LICENSE` (D-01) — blocks any public release.
 3. [x] ~~Owner decision: approve seeding GitHub Issues~~ — **Done 2026-09-10.** Phase 1 backlog seeded as Issues #13-#58 (see §8). Phase 2-3 epics (EPIC-14..EPIC-24) intentionally not seeded yet, matching `docs/backlog/user-stories.md`'s own rule against decomposing them early.
-4. [ ] **EPIC-03:** MinIO/S3 backend implementing the `RawStorage` protocol in `src/common/raw_storage.py`; Bronze writer with lineage back to the raw object key.
-5. [ ] **EPIC-02 remainder:** `ingestion_run` record (FR-OPS-001), DLQ routing (FR-OPS-003), end-to-end idempotency test (US-02-004).
-6. [ ] **EPIC-07:** Dagster project under `pipelines/` — this directory still does not exist.
-7. [ ] Write `docs/architecture/capacity-model.md` — data volumes at 12/36 months. NFR targets currently have no load model behind them.
-8. [ ] Write `docs/architecture/threat-model.md` — STRIDE pass over ingestion, API, agent, secrets.
-9. [ ] Create `runbooks/` + `runbook-template.md` (required by NFR-MAINT-001).
+4. [ ] **Optional cleanup:** `QWEN-Code-Agent` and `mvp-implementation-analysis-6b834` branches are superseded now that PR #12 is merged — safe to delete so no one starts from the unrepaired version.
+5. [ ] **EPIC-03:** MinIO/S3 backend implementing the `RawStorage` protocol in `src/common/raw_storage.py`; Bronze writer with lineage back to the raw object key.
+6. [ ] **EPIC-02 remainder:** `ingestion_run` record (FR-OPS-001), DLQ routing (FR-OPS-003), end-to-end idempotency test (US-02-004).
+7. [ ] **EPIC-07:** Dagster project under `pipelines/` — this directory still does not exist.
+8. [ ] Write `docs/architecture/capacity-model.md` — data volumes at 12/36 months. NFR targets currently have no load model behind them.
+9. [ ] Write `docs/architecture/threat-model.md` — STRIDE pass over ingestion, API, agent, secrets.
+10. [ ] Create `runbooks/` + `runbook-template.md` (required by NFR-MAINT-001).
 
 ## 5. Open decisions blocking work
 
