@@ -110,7 +110,7 @@ to issue-seeding.
 | EPIC-01 | [#13](https://github.com/payamoghtanem/Finance-Data-Engineering-Platform/issues/13) | Closed (done) | #27-#30, all closed |
 | EPIC-02 | [#15](https://github.com/payamoghtanem/Finance-Data-Engineering-Platform/issues/15) | Open (mostly done) | #31-#36: #31,#33,#35 closed; #32,#34 partial (open, blocked on EPIC-05); #36 open (blocked on EPIC-05) |
 | EPIC-03 | [#16](https://github.com/payamoghtanem/Finance-Data-Engineering-Platform/issues/16) | Closed (done) | #37-#39, all closed |
-| EPIC-04 | [#17](https://github.com/payamoghtanem/Finance-Data-Engineering-Platform/issues/17) | Open | #40-#48, open |
+| EPIC-04 | [#17](https://github.com/payamoghtanem/Finance-Data-Engineering-Platform/issues/17) | Open (mostly done) | #40,#42,#44,#47,#48 closed (rules needing no external context); #41,#43,#45,#46 open (rule logic done, real invocation blocked on EPIC-05/EPIC-07 — see issue comments) |
 | EPIC-05 | [#18](https://github.com/payamoghtanem/Finance-Data-Engineering-Platform/issues/18) | Open | #49-#51, open |
 | EPIC-06 | [#19](https://github.com/payamoghtanem/Finance-Data-Engineering-Platform/issues/19) | Closed (done) | #52, closed |
 | EPIC-07 | [#20](https://github.com/payamoghtanem/Finance-Data-Engineering-Platform/issues/20) | Open | #53, open |
