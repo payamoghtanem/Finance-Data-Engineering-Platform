@@ -1,0 +1,57 @@
+version: 2
+
+models:
+  - name: fact_economic_observation
+    description: >
+      Canonical economic-indicator observations (FR-MODEL-001), conformed
+      from Bronze regardless of source. **Honest scope note**: only FRED
+      (via `seed_dataset_indicator_map`) feeds this model today — Eurostat
+      doesn't exist yet (EPIC-14). The shape is source-agnostic by design;
+      a second source proves conformance by adding a mapping row and a
+      parsing branch, not by changing this table's shape.
+    columns:
+      - name: indicator_id
+        description: FK to seed_dim_indicator. Part of the primary key.
+        tests: [not_null]
+      - name: geo_code
+        description: ISO country/region code. Part of the primary key.
+        tests: [not_null]
+      - name: period
+        description: "e.g. 2024-01 for monthly. Part of the primary key."
+        tests: [not_null]
+      - name: period_start
+        description: First calendar day of the period this observation covers.
+        tests: [not_null]
+      - name: period_end
+        description: Last calendar day of the period this observation covers.
+        tests: [not_null]
+      - name: vintage_date
+        description: >
+          The revision date of this value (FRED's realtime_start). Part of
+          the primary key — a later revision is a new row, never an
+          overwrite (this is what makes point-in-time queries, FR-API-002,
+          correct).
+        tests: [not_null]
+      - name: value
+        description: The observation's numeric value.
+        tests: [not_null]
+      - name: unit
+        description: Denormalized from seed_dim_indicator for query convenience.
+      - name: seasonal_adjustment
+        tests:
+          - accepted_values:
+              arguments:
+                values: ["sa", "nsa", "unknown"]
+      - name: published_at
+        description: >
+          When the source officially released this value. NULL for FRED:
+          its per-observation JSON does not expose a publication timestamp
+          distinct from realtime_start — left NULL rather than faked as a
+          copy of vintage_date. Populate once a source exposes this
+          (e.g. a future FRED /releases integration).
+      - name: retrieved_at
+        description: Copied from Bronze's retrieved_at — when the connector fetched the payload.
+        tests: [not_null]
+      - name: processed_at
+        description: When this dbt run built the row (run_started_at) — distinct from retrieved_at by construction.
+        tests: [not_null]

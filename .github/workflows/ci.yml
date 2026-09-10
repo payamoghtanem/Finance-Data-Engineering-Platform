@@ -46,10 +46,10 @@ jobs:
         run: pip install -e ".[dev]"
 
       - if: steps.guard.outputs.has_src == 'true'
-        run: ruff check src tests
+        run: ruff check src tests scripts
 
       - if: steps.guard.outputs.has_src == 'true'
-        run: ruff format --check src tests
+        run: ruff format --check src tests scripts
 
       - if: steps.guard.outputs.has_src == 'true'
         run: mypy src
@@ -74,6 +74,33 @@ jobs:
 
       - if: steps.guard.outputs.has_tests == 'true'
         run: pytest tests/unit
+
+  dbt-transform:
+    name: Silver/Gold dbt build (FR-MODEL-001..003)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Skip if no dbt project yet
+        id: guard
+        run: |
+          if [ -d src/transform/dbt_project ]; then echo "has_dbt=true" >> "$GITHUB_OUTPUT";
+          else echo "has_dbt=false" >> "$GITHUB_OUTPUT"; echo "No dbt project yet (Phase 0) - skipping."; fi
+
+      - if: steps.guard.outputs.has_dbt == 'true'
+        run: pip install -e ".[dev,transform]"
+
+      - if: steps.guard.outputs.has_dbt == 'true'
+        run: mkdir -p transform_store
+
+      - name: dbt build, idempotency, and vintage-awareness (US-02-004, US-02-006)
+        if: steps.guard.outputs.has_dbt == 'true'
+        env:
+          DBT_PROFILES_DIR: ${{ github.workspace }}/src/transform/dbt_project
+        run: python scripts/verify_epic05_acceptance.py
 
   contracts:
     name: Data contract validation (FR-ING-006)

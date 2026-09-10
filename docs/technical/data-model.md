@@ -82,13 +82,17 @@ Primary key: `(source_id, instrument_id, interval, observed_at)` — matches the
 | `indicator_id` | string (FK) | Part of primary key |
 | `geo_code` | string | ISO country/region code; part of primary key |
 | `period` | string | e.g., `2024-01` for monthly; part of primary key |
+| `period_start` / `period_end` | date | First/last calendar day the `period` label covers — kept as literal columns, never derived from `period` at query time (FR-MODEL-002) |
 | `vintage_date` | date | The revision date of this value; part of primary key |
 | `value` | decimal(28,8) | |
 | `unit` | string | Denormalized from `dim_indicator` for query convenience |
-| `published_at` | timestamp | |
-| `retrieved_at` | timestamp | |
+| `published_at` | timestamp, nullable | When the source officially released this value. Nullable because not every source's ingestion exposes this distinct from `vintage_date`/`retrieved_at` — see the model's own docs (`../../src/transform/dbt_project/models/silver/schema.yml`) before assuming it's populated |
+| `retrieved_at` | timestamp | When the connector fetched the payload this row was conformed from — copied from Bronze, never recomputed |
+| `processed_at` | timestamp | When the Silver transform that produced this row ran — distinct from `retrieved_at` by construction (EPIC-05) |
 
 Primary key: `(indicator_id, geo_code, period, vintage_date)` — this is what makes point-in-time queries (FR-API-002) correct: querying `as_of` a date selects the newest `vintage_date` that is ≤ that date.
+
+This table's six time fields (`observed_at`'s role is split into `period_start`/`period_end` for period-based indicators — see `../00-glossary.md`) must never collapse into one another; `../../src/transform/dbt_project/tests/assert_fact_economic_observation_time_fields_distinct.sql` enforces this per FR-MODEL-002.
 
 ### `fact_trade_observation` (Silver/Gold)
 

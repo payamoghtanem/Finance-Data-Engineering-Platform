@@ -1,0 +1,21 @@
+# Phase 1 target: local DuckDB files, same embedded-engine choice already
+# used for Bronze (bronze_store/bronze.duckdb) and ingestion_run
+# (ops_store/ingestion_runs.duckdb) — see mvp-plan.md §2. No new
+# infrastructure is introduced by adding dbt.
+#
+# `attach` makes Bronze's own DuckDB file available to dbt as a source
+# database (aliased `bronze_db`) without copying its data — Silver reads
+# Bronze in place, per the module boundary in technical-design-document.md
+# (`transform/` conforms; it never re-fetches or duplicates what `bronze/`
+# already wrote).
+finance_data_platform:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: "{{ env_var('DBT_DUCKDB_PATH', 'transform_store/transform.duckdb') }}"
+      attach:
+        - path: "{{ env_var('DBT_BRONZE_DB_PATH', 'bronze_store/bronze.duckdb') }}"
+          alias: bronze_db
+          read_only: true
+      threads: 4

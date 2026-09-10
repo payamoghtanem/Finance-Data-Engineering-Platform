@@ -1,0 +1,2 @@
+dataset_id,source_id,indicator_id,geo_code,frequency
+fred_cpiaucsl,fred,cpi_us,US,monthly

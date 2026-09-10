@@ -23,6 +23,10 @@ dev = [
   "moto[s3]>=5.0",  # mocks S3/MinIO for S3RawStorage tests — no live network call
   "types-PyYAML>=6.0",  # stubs for pyyaml, so mypy --strict can check validation.contract
 ]
+transform = [
+  "dbt-core>=1.8",    # src/transform/dbt_project (EPIC-05) — Silver/Gold conformance
+  "dbt-duckdb>=1.8",  # same embedded engine already used for Bronze/ingestion_run
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -34,7 +38,7 @@ packages = ["src"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-src = ["src", "tests"]
+src = ["src", "tests", "scripts"]
 
 [tool.ruff.lint]
 # E/W pycodestyle, F pyflakes, I isort, B bugbear, C4 comprehensions,
@@ -44,6 +48,7 @@ ignore = ["E501"]  # line length is handled by the formatter
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101", "T20"]  # asserts and prints are fine in tests
+"scripts/**" = ["T20"]  # CLI scripts report status via print, same as the existing .sh gate scripts
 
 [tool.mypy]
 python_version = "3.11"

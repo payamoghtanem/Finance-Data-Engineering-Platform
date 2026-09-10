@@ -1,0 +1,2 @@
+indicator_id,name,unit,seasonal_adjustment,methodology_url
+cpi_us,Consumer Price Index for All Urban Consumers,index_1982_84_100,sa,
