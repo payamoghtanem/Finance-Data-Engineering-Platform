@@ -73,6 +73,21 @@ no new infrastructure. It becomes an Iceberg table per `data-model.md` §1 when
 the platform moves off a single laptop; nothing above this storage detail
 changes when that swap happens.
 
+### 2b. `ingestion_run` storage (US-02-005)
+
+Every connector run — success or failure — writes exactly one row via
+`src/common/ingestion_run.py`, matching the `ingestion_run` schema in
+`data-model.md` §4. Unlike Raw/Bronze, this table is **not** content-addressed:
+each execution is its own audit-log entry, even one that (because the data
+layer is idempotent) writes nothing new downstream.
+
+Phase 1 storage is a separate local DuckDB file
+(`ops_store/ingestion_runs.duckdb`), for the same zero-extra-infrastructure
+reason as Bronze's. `ingestion_run` and `data_quality_result` are operational
+metadata rather than data-lake content, so their more likely production home
+is PostgreSQL (`PlatformConfig.database` already exists for this) once
+multiple connectors write concurrently — revisit when EPIC-07/08 need that.
+
 ## 3. Retry / backoff algorithm (implements FR-ING-001 etc.)
 
 ```python

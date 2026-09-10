@@ -30,6 +30,8 @@ htmlcov/
 # Data — never commit raw or derived data
 data/
 raw_store/
+bronze_store/
+ops_store/
 *.parquet
 *.duckdb
 *.sqlite
