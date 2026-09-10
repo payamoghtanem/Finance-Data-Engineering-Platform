@@ -12,3 +12,11 @@ Every other document in this repository documents a *decision already made* for 
 
 - Keep this document's core teaching content generically applicable — if you add a project-specific detail, clearly mark it as "(this project's choice: ...)" so it doesn't get mistaken for a universal rule.
 - When this document references "where to find trustworthy answers," it must point to primary/official sources (vendor docs, open-source project docs, standards bodies) in the same spirit as `../data-sources/catalog.md`'s own source-reliability criteria — don't cite secondary blog commentary as if it were a primary source.
+
+## Current status
+
+- **This folder:** Stable — standalone, no dependencies on other docs.
+- Safe to read or update in isolation.
+
+**Live project state is in `/STATUS.md`, not here** — it records what is done, in
+progress, and next. Do not duplicate that state into this file; it will drift.

@@ -23,3 +23,11 @@ Every source in `catalog.md` should be representable as a row in `dim_source` (s
 ## Scraping warning (do not relax this)
 
 Web scraping of a public site is explicitly **not** an acceptable primary ingestion method for production use in this project (see `../architecture/ARD.md` principle 7 and `catalog.md`'s own scraping warning section). Unofficial libraries wrapping consumer sites (e.g., unofficial Yahoo Finance wrappers) are fine for learning/prototyping only, never as the ingestion backbone for anything the platform calls a "data product."
+
+## Current status
+
+- **This folder:** Stable — 8 countries catalogued, MVP-priority sources identified.
+- No connector consumes these yet. FRED is the Phase 1 reference source (EPIC-02).
+
+**Live project state is in `/STATUS.md`, not here** — it records what is done, in
+progress, and next. Do not duplicate that state into this file; it will drift.

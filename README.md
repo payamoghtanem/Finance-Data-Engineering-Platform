@@ -17,8 +17,14 @@ See [`docs/01-executive-summary-and-recommendation.md`](docs/01-executive-summar
 ```
 .
 ├── CLAUDE.md                     # Root agent/LLM context file — read this first if you are an AI agent
+├── STATUS.md                     # LIVE STATE — what's done, in progress, and next
 ├── README.md                     # This file — human-facing entry point
-├── PLAN.md                       # Living project plan (English) — scope, sequencing, status
+├── PLAN.md                       # Phase-0 design plan (historical record)
+├── CONTRIBUTING.md               # Order of work, local setup, PR rules
+├── SECURITY.md                   # Secrets posture and vulnerability reporting
+├── scripts/                      # Doc-link and traceability checks (run by CI)
+├── .github/                      # CI workflows, issue + PR templates
+├── .claude/                      # Agent harness config: permissions + slash commands
 └── docs/
     ├── CLAUDE.md                 # Context for the docs/ tree as a whole
     ├── 00-glossary.md            # Shared terminology used across every document
@@ -31,6 +37,8 @@ See [`docs/01-executive-summary-and-recommendation.md`](docs/01-executive-summar
     ├── ai-agent/                 # Agentic AI design — scope, guardrails, audit
     ├── methodology/              # How this project is built: EDD + SDD + TDD combined
     ├── learning-guide/           # Standalone teaching guide: how to design a data platform, and why
+    ├── backlog/                  # Epics, user stories, definition of ready/done
+    ├── engineering/              # Coding standards and test strategy
     └── roadmap/                  # Phased MVP → team → cloud-native rollout plan
 ```
 
@@ -58,6 +66,11 @@ Every directory under `docs/` has its own `CLAUDE.md` explaining what belongs th
 | Methodology (EDD + SDD + TDD) | `docs/methodology/edd-sdd-tdd.md` | How specs, events, and tests drive development together |
 | System Design Learning Guide | `docs/learning-guide/system-design-guide.md` | How do you learn to design a system like this, from scratch? |
 | Roadmap & MVP Plan | `docs/roadmap/mvp-plan.md` | What ships first, on a laptop, and what comes after? |
+| **Project Status** | `STATUS.md` | **What is done, what is next, what is blocked?** |
+| Epics & User Stories | `docs/backlog/` | Who does what, in what order, and when is it done? |
+| Engineering Standards | `docs/engineering/engineering-standards.md` | How must code in this repo be written? |
+| Test Strategy | `docs/engineering/test-strategy.md` | What tests exist, and what does each prove? |
+| Contributing | `CONTRIBUTING.md` | How do I set up and submit a change? |
 
 ## Context design for LLMs and agents
 
@@ -68,6 +81,13 @@ This repository is built to be **navigable by an AI coding agent with zero prior
 - Documents cross-reference each other by relative path, not by restating content, so there is one place to update each fact and no drift between documents.
 - `docs/00-glossary.md` is the single source of terminology (English term ↔ definition ↔ where it's used) that every other document assumes.
 
+## Current status
+
+**Phase 0 (design) is complete; Phase 1 (Local MVP) has not started.** No runtime code
+exists yet. See [`STATUS.md`](STATUS.md) for the authoritative, continuously-updated
+state — including the next actionable task and the open decisions currently blocking work.
+
 ## License and status
 
-Documentation-only phase. No runtime code yet. Data source usage must respect each source's own license/terms — see `docs/data-sources/catalog.md`.
+**No `LICENSE` file has been chosen yet** — this is an open owner decision (D-01 in
+`STATUS.md`) and blocks any public release or outside contribution. Data source usage must respect each source's own license/terms — see `docs/data-sources/catalog.md`.

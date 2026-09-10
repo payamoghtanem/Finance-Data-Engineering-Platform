@@ -22,3 +22,11 @@ The agent is powerful enough, and risky enough (hallucination, unauthorized acti
 - This is a specialization of the general architecture principles in `../architecture/ARD.md` (especially "secure by default" and "data provenance") applied specifically to an LLM-driven feature.
 - If a capability described in `../business/PRD.md` involves the agent, that PRD entry must reference this document, not restate its constraints inline (to avoid drift).
 - This document itself follows the Coordinator/Implementor/Verifier adversarial-agent pattern described in `../methodology/edd-sdd-tdd.md` for how *building* the agent's own features should work — don't confuse "how the product's agent behaves at runtime" (this file) with "how we use AI-assisted development to build the platform" (the methodology file).
+
+## Current status
+
+- **This folder:** Stable — spec complete.
+- Implementation is EPIC-20 (Phase 2), deliberately gated behind catalog and audit logging.
+
+**Live project state is in `/STATUS.md`, not here** — it records what is done, in
+progress, and next. Do not duplicate that state into this file; it will drift.

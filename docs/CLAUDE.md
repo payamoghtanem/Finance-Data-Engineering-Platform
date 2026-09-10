@@ -20,6 +20,8 @@ This folder is the entire design and requirements record for the platform. If th
 | `methodology/` | How the team builds features (EDD + SDD + TDD combined) | What gets built (that's `requirements/`) |
 | `learning-guide/` | Standalone teaching material — read independently of every other document | Project-specific decisions (it teaches the general skill, and references this project only as a worked example) |
 | `roadmap/` | Sequencing and phase exit criteria | Feature-level detail (link out to FRD/PRD instead of duplicating) |
+| `backlog/` | Epics, user stories, and the ready/done gates — the bridge from design to execution | Requirement definitions (that's `requirements/`) — a story cites an FR, it never replaces it |
+| `engineering/` | How code is written, reviewed and tested (standards, test strategy) | What to build (that's `technical/`) |
 
 ## Cross-document rules
 
@@ -28,3 +30,9 @@ This folder is the entire design and requirements record for the platform. If th
 3. **Every technical claim in `requirements/` or `technical/` must be traceable** back to a BRD/PRD goal via `requirements/traceability-matrix.md`. An FR with no traceability row is incomplete.
 4. **ADRs in `architecture/decisions/` are append-only.** A changed decision gets a new ADR that supersedes the old one; the old one is never edited to pretend it always said the new thing.
 5. **English only, and only glossary-defined terms**, with the original non-English term (if any) noted in parentheses only where it aids search (e.g., referencing an external standard's native name).
+
+## Live state
+
+Design docs here describe the system; they do not track progress. **`/STATUS.md` is the
+single source of truth for what is done, in progress, and next.** Update it in the same
+change as the work — never leave project state in a chat session, which does not persist.

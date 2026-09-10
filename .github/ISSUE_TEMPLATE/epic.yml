@@ -1,0 +1,32 @@
+name: Epic
+description: A coarse-grained body of work spanning multiple stories
+title: "[EPIC-__] "
+labels: ["epic"]
+body:
+  - type: input
+    id: epic_id
+    attributes:
+      label: Epic ID
+      placeholder: EPIC-04
+    validations: {required: true}
+  - type: input
+    id: delivers
+    attributes:
+      label: Delivers (requirement IDs)
+      placeholder: FR-QUAL-001 ... FR-QUAL-009
+    validations: {required: true}
+  - type: dropdown
+    id: phase
+    attributes:
+      label: Phase
+      options: ["Phase 1 - Local MVP", "Phase 2 - Team-ready", "Phase 3 - Cloud-native", "Cross-cutting"]
+    validations: {required: true}
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope and exit criteria
+    validations: {required: true}
+  - type: textarea
+    id: depends
+    attributes:
+      label: Depends on

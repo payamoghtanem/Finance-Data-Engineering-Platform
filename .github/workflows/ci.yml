@@ -1,0 +1,97 @@
+# Implements the CI gates in docs/technical/technical-design-document.md §5
+# and docs/engineering/engineering-standards.md §9.
+#
+# NOTE: no runtime code exists yet (Phase 0). The code jobs below are wired now
+# so that EPIC-01's first commit is gated from line one, and they no-op cleanly
+# until src/ and tests/ exist.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, Claude-Code-Agent]
+
+permissions:
+  contents: read
+
+jobs:
+  secret-scan:
+    name: Secret scan (NFR-SEC-003)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  lint-and-type:
+    name: Lint, format, type check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Skip if no source yet
+        id: guard
+        run: |
+          if [ -d src ]; then echo "has_src=true" >> "$GITHUB_OUTPUT";
+          else echo "has_src=false" >> "$GITHUB_OUTPUT"; echo "No src/ yet (Phase 0) - skipping."; fi
+
+      - if: steps.guard.outputs.has_src == 'true'
+        run: pip install ruff mypy
+
+      - if: steps.guard.outputs.has_src == 'true'
+        run: ruff check src tests
+
+      - if: steps.guard.outputs.has_src == 'true'
+        run: ruff format --check src tests
+
+      - if: steps.guard.outputs.has_src == 'true'
+        run: mypy src
+
+  tests:
+    name: Unit tests + coverage (NFR-MAINT-003)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Skip if no tests yet
+        id: guard
+        run: |
+          if [ -d tests/unit ]; then echo "has_tests=true" >> "$GITHUB_OUTPUT";
+          else echo "has_tests=false" >> "$GITHUB_OUTPUT"; echo "No tests/unit yet (Phase 0) - skipping."; fi
+
+      - if: steps.guard.outputs.has_tests == 'true'
+        run: pip install -e ".[dev]"
+
+      - if: steps.guard.outputs.has_tests == 'true'
+        run: pytest tests/unit
+
+  contracts:
+    name: Data contract validation (FR-ING-006)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Every connector has a contract
+        run: |
+          if [ ! -d src/connectors ]; then
+            echo "No connectors yet (Phase 0) - skipping."; exit 0
+          fi
+          fail=0
+          for d in src/connectors/*/; do
+            [ -d "$d" ] || continue
+            for required in contract.yaml README.md; do
+              if [ ! -f "$d$required" ]; then
+                echo "::error::$d is missing $required (NFR-MAINT-001 / FR-ING-006)"
+                fail=1
+              fi
+            done
+          done
+          exit $fail
