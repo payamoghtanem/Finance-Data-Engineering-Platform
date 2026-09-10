@@ -192,8 +192,49 @@ class TestConfig:
         with pytest.raises(ValueError, match="FRED_API_KEY"):
             FREDConnector.from_config(self._config(fred_api_key=None))
 
-    def test_from_config_success(self):
+    def test_from_config_success(self, tmp_path):
+        # Explicit raw_storage: the default now builds a real S3RawStorage
+        # (EPIC-03) that would otherwise try to reach MinIO. See
+        # TestFromConfigDefaultsToS3 below for that path, mocked via moto.
         connector = FREDConnector.from_config(
-            self._config(fred_api_key="test_key", log_level="DEBUG")
+            self._config(fred_api_key="test_key", log_level="DEBUG"),
+            raw_storage=LocalRawStorage(tmp_path),
         )
         assert connector.api_key == "test_key"
+
+
+class TestFromConfigDefaultsToS3:
+    """EPIC-03: from_config wires config.minio into a real S3RawStorage."""
+
+    def _config(self, **kwargs):
+        return PlatformConfig(
+            database=DatabaseConfig(
+                host="localhost",
+                port=5432,
+                database="test",
+                user="test",
+                password="unused",  # noqa: S106 - test fixture, not a credential
+            ),
+            minio=MinIOConfig(
+                endpoint="http://localhost:9000",
+                access_key="test",
+                secret_key="unused",  # noqa: S106 - test fixture, not a credential
+                raw_bucket="raw",
+            ),
+            **kwargs,
+        )
+
+    def test_omitting_raw_storage_builds_s3_backend(self):
+        from src.common.raw_storage import S3RawStorage
+
+        # ensure_bucket() is a real network call (head/create_bucket); this
+        # test is about from_config's wiring, not S3RawStorage's own request
+        # behaviour — that's already covered by test_s3_raw_storage.py against
+        # a moto-mocked client. Stubbing it out keeps this test network-free
+        # without depending on moto's handling of a custom endpoint_url.
+        with patch.object(S3RawStorage, "ensure_bucket", return_value=None) as ensure_bucket:
+            connector = FREDConnector.from_config(self._config(fred_api_key="test_key"))
+
+        assert isinstance(connector.raw_storage, S3RawStorage)
+        assert connector.raw_storage.bucket == "raw"
+        ensure_bucket.assert_called_once()

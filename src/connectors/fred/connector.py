@@ -28,6 +28,7 @@ from src.common.logging_config import setup_logging
 from src.common.raw_storage import (
     LocalRawStorage,
     RawStorage,
+    S3RawStorage,
     build_object_key,
     compute_sha256,
 )
@@ -250,9 +251,18 @@ class FREDConnector:
     def from_config(
         cls, config: PlatformConfig, raw_storage: RawStorage | None = None
     ) -> FREDConnector:
-        """Build a connector from platform configuration."""
+        """Build a connector from platform configuration.
+
+        Defaults to `S3RawStorage` built from `config.minio` — that config
+        section exists specifically to point at the Phase 1 MinIO service in
+        `infra/docker-compose.yml`, so this is what actually wires it up
+        (EPIC-03). Pass `raw_storage` explicitly to override, e.g. in tests.
+        """
         if not config.fred_api_key:
             raise ValueError("FRED_API_KEY is required but not set")
+        if raw_storage is None:
+            raw_storage = S3RawStorage.from_config(config.minio)
+            raw_storage.ensure_bucket()
         return cls(
             api_key=config.fred_api_key,
             raw_storage=raw_storage,

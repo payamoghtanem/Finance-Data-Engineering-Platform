@@ -22,7 +22,7 @@ Once implementation begins, `src/`, `pipelines/`, and `infra/` (not yet created)
 ## Current status
 
 - **This folder:** Stable — data model, API, event schema, and TDD complete.
-- No code implements these yet. `src/` lands in EPIC-01; this folder is what it must match.
+- `src/` exists and partially implements this (EPIC-01/02/03 — the FRED connector, `RawStorage`, `bronze/`). This folder is still what any new or changed code must match — update the doc first if code needs to diverge.
 
 **Live project state is in `/STATUS.md`, not here** — it records what is done, in
 progress, and next. Do not duplicate that state into this file; it will drift.
