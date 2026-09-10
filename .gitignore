@@ -1,57 +1,43 @@
-# Secrets — never commit
-.env
-.env.*
-!.env.example
-*.pem
-*.key
-credentials.json
-secrets/
-
-# Python
-__pycache__/
-*.py[cod]
-*.egg-info/
-.eggs/
-build/
-dist/
+```
+# Dependencies
 .venv/
 venv/
-.python-version
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
 
-# Testing / coverage
-.pytest_cache/
-.coverage
-.coverage.*
-htmlcov/
-.mypy_cache/
-.ruff_cache/
+# Build and distribution artifacts
+dist/
+build/
+*.egg-info/
 
-# Data — never commit raw or derived data
-data/
-*.parquet
-*.duckdb
-*.sqlite
-*.db
+# Logs
+*.log
 
-# dbt
-target/
-dbt_packages/
-logs/
+# Environment files
+.env
+.env.local
+*.env.*
 
-# Dagster
-.dagster/
-dagster_home/
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
 
-# OS / editor
+# OS generated files
 .DS_Store
 Thumbs.db
-.idea/
-.vscode/
-*.swp
 
-# Terraform / OpenTofu
-.terraform/
-*.tfstate
-*.tfstate.*
-*.tfvars
-!*.tfvars.example
+# Testing
+.coverage
+htmlcov/
+.coverage.*
+.cache
+.pytest_cache/
+.mypy_cache/
+
+# Docker
+.dockerenv
+```
