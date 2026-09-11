@@ -270,6 +270,44 @@ available in an agent session (same constraint as `Dockerfile.dagster`,
 DEBT-09) — writing unverified provisioning YAML would be guessing, not
 building. See STATUS.md's EPIC-08 entry.
 
+### 2g. Gold dashboard (`scripts/provision_metabase_gold_dashboard.py`, EPIC-10)
+
+US-10-001: "Metabase queries Gold (never Bronze/Silver); p50 < 5s"
+(NFR-PERF-001). Split into what's genuinely verifiable without Docker and
+what isn't, rather than building either half half-heartedly:
+
+- **Verified**: `scripts/verify_epic10_gold_query_latency.py` seeds a
+  synthetic multi-year fixture through the real Bronze/dbt path (same
+  discipline as `scripts/verify_epic05_acceptance.py`), then times the SQL
+  a Gold dashboard card would run against `main_gold.fact_economic_kpi`
+  over 20 repetitions and asserts the median against NFR-PERF-001's 5s
+  target. Wired into CI's `dbt-transform` job. **Honest scope limit**: a
+  laptop-sized synthetic fixture, not real production volumes (no capacity
+  model exists yet, DEBT-03) — this proves the query shape is fast by
+  construction, not the real p50 under load.
+- **Unverified**: `scripts/provision_metabase_gold_dashboard.py` provisions
+  a Metabase database connection, a Gold-only SQL card, and a dashboard via
+  Metabase's REST API, idempotently (find-or-create by name throughout). It
+  has never been run against a live Metabase instance — no Docker daemon
+  in this session, so `infra/docker-compose.yml`'s `metabase` service has
+  never started. What's tested instead
+  (`tests/unit/test_provision_metabase_gold_dashboard.py`) is the request
+  shape/ordering/idempotency against a fake transport, and — the one thing
+  enforceable without Metabase itself — that the provisioned SQL only ever
+  references `main_gold.fact_economic_kpi`, never Bronze or Silver.
+
+**Open architecture question, not resolved here**: Metabase's official
+image ships no DuckDB driver, and Gold lives only in DuckDB (EPIC-05).
+`../architecture/solution-design-document.md`'s flow diagram shows Metabase
+reading through a combined "PostgreSQL cache + Trino/DuckDB" serving layer,
+but no Gold-to-Postgres sync job exists in code, and `../architecture/
+ARD.md`'s serving-database row reserves PostgreSQL for metadata/job-state/
+fast API reads, "never for the full historical OHLCV volume" — which argues
+against caching all of Gold into Postgres too. The provisioning script is
+deliberately engine-agnostic about this (its `--database-engine`/
+`--database-details` are parameters, not assumptions); resolving it for
+real needs a live Docker daemon to test against, tracked as DEBT-11.
+
 ## 3. Retry / backoff algorithm (implements FR-ING-001 etc.)
 
 ```python
