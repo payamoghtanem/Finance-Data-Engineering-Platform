@@ -13,6 +13,7 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .eggs/
+.Python
 build/
 dist/
 .venv/
@@ -67,3 +68,11 @@ Thumbs.db
 *.tfstate.*
 *.tfvars
 !*.tfvars.example
+
+# --- DuckDB (Local MVP) ---
+*.duckdb
+*.wal
+
+# --- MinIO / S3 Local (Local MVP) ---
+/data/
+/minio_data/
