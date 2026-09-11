@@ -102,6 +102,12 @@ jobs:
           DBT_PROFILES_DIR: ${{ github.workspace }}/src/transform/dbt_project
         run: python scripts/verify_epic05_acceptance.py
 
+      - name: Gold query latency (EPIC-10, NFR-PERF-001)
+        if: steps.guard.outputs.has_dbt == 'true'
+        env:
+          DBT_PROFILES_DIR: ${{ github.workspace }}/src/transform/dbt_project
+        run: python scripts/verify_epic10_gold_query_latency.py
+
   dagster-pipeline:
     name: Dagster definitions validate (EPIC-07)
     runs-on: ubuntu-latest
