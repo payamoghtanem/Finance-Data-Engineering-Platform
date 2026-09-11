@@ -1,5 +1,79 @@
-# Documentation and runbook files are source content - no ignores needed
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
 
-# All added files are markdown documentation/runbooks which should be version controlled
-# No build artifacts, dependencies, or temp files detected in changes
-# Current .gitignore is empty and no new ignores are required
+# --- Virtual Environments ---
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# --- IDEs ---
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# --- Testing ---
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# --- Jupyter Notebook ---
+.ipynb_checkpoints
+
+# --- dbt ---
+/target/
+/dbt_packages/
+/logs/
+*.log
+
+# --- Dagster ---
+.dagster_home/
+storage/
+*.db
+
+# --- DuckDB ---
+*.duckdb
+*.wal
+
+# --- MinIO / S3 Local ---
+/data/
+/minio_data/
+
+# --- Secrets (CRITICAL) ---
+.env.local
+.secrets
+*.pem
+*.key
+credentials.json
+service_account.json
+
+# --- OS ---
+Thumbs.db
