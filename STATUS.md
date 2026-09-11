@@ -57,7 +57,6 @@ up next* from this file alone — without access to a prior chat session.
 | `ValidationEngine` → `DataQualityResultRecorder` wiring | **Not started** | — | `data_quality_result` table exists (EPIC-08) but nothing writes to it yet; needed for `detect_blocking_quality_failure` to have a real caller |
 | US-09-001/US-09-002: DLQ + replay wired into the live Dagster pipeline | **Mechanism built against `EventBus` directly, not yet attached to `pipelines/dagster_project/`** | — | Needs a real consumer of `raw_data.received`/`raw_data.quarantined` on the live pipeline first — same blocker as `ValidationEngine`'s own pipeline wiring (EPIC-04) |
 | US-10-001: live Metabase dashboard over Gold | **Provisioning script built and unit-tested against a fake transport, never run against real Metabase** | human (needs live Docker + resolving the Postgres-vs-DuckDB-driver connection question) | See DEBT-11 |
-| Project #6 auto-add workflow | **Blocked — awaiting owner** | human | One-time board setting; see §8. Issues themselves are already seeded. |
 
 ## 4. What to do next (ordered)
 
@@ -88,7 +87,7 @@ The next agent should start at the **top unchecked item**.
 | # | Decision | Why it's the owner's call | Blocks |
 |---|---|---|---|
 | D-01 | Repository license (MIT / Apache-2.0 / proprietary) | Legal and ownership; not an agent's call | **Resolved 2026-09-10 — deliberately staying unlicensed.** No `LICENSE` file exists, so default copyright applies: all rights reserved, no one (including a contributor or another agent) has legal permission to copy, modify, or reuse this code, even though the repo is public. This was a conscious choice, not an oversight — revisit if external contribution, forking, or reuse is ever wanted. |
-| D-02 | Seed GitHub Issues + project board? | Outward-facing, hard to reverse | **Resolved 2026-09-10** — Issues seeded (§8). Auto-add to Project #6 still needs a one-time owner action, see §8. |
+| D-02 | Seed GitHub Issues + project board? | Outward-facing, hard to reverse | **Fully resolved 2026-09-11** — Issues seeded (§8) and the owner enabled Project #6's Auto-add workflow (filtered to this repo, `is:issue,pr is:open`). New/updated open issues and PRs now flow onto the board automatically. |
 | D-03 | Confirm Python version + package manager (assumed 3.11 + pip in `pyproject.toml`) | Environment ownership | Phase 1 scaffolding |
 | D-04 | Enable branch protection on `main` requiring green CI | Repository administration | **Resolved 2026-09-10.** Ruleset `main-protection` active: PR required (0 approvals needed — solo dev), 6 status checks required, force-push and deletion blocked. Pitfall for future agents: pasting all 6 check names into the search box at once registers ONE concatenated context that can never pass — add each check separately, selecting it from the dropdown, and verify via `GET /repos/.../rules/branches/main` that `required_status_checks` has 6 separate entries before trusting the UI. |
 
@@ -152,10 +151,15 @@ then fail to resolve even though the call itself is otherwise valid. If you hit
 is bad — check `get_label` first, and if genuinely new labels are needed, pace
 the creates out or reuse an existing label instead of inventing more at once.
 
-**One remaining manual step — Project #6 (`github.com/users/payamoghtanem/projects/6`):**
-this repo has no tool access to that board directly (Projects v2 for a *personal*
-User account isn't reachable the way an Organization project's custom fields
-are). To get these issues flowing onto the board automatically: open Project #6
-→ `⋯` menu → **Workflows** → **Auto-add to project**, and add a rule matching
-this repository. Every issue above already exists and will appear once that
-one-time rule is set — no re-seeding needed.
+**Project #6 (`github.com/users/payamoghtanem/projects/6`) — auto-add enabled 2026-09-11:**
+the owner turned on the **Auto-add to project** workflow, filtered to this
+repository with `is:issue,pr is:open`. This repo still has no tool access to
+Projects v2 directly for a *personal* User account (unlike an Organization
+project's custom fields), so this was necessarily a manual, owner-side step —
+not something an agent session here could do itself. New or updated open
+issues/PRs now flow onto the board automatically going forward. GitHub's
+auto-add rule is not guaranteed to backfill issues that were already open
+and untouched before the rule was enabled — if any of #13-#58 above are
+missing from the board, either touch them (a label change, a comment) or
+add them manually from the board's own "+ Add item" control; no re-seeding
+of the issues themselves is needed either way.
